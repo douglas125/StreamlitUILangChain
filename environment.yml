@@ -1,0 +1,22 @@
+name: st_lc_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.13
+  - jupyterlab
+  - jupyterlab-lsp
+  - python-lsp-server
+  - boto3
+  - pip
+  - git
+  - pre-commit
+  - streamlit
+  - langchain
+  - langchain-core
+  - langchain-aws
+  - langchain-openai
+  - langchain-anthropic
+  - langchain-ollama
+  - langgraph
+  - langsmith
