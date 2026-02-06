@@ -90,13 +90,26 @@ class StLanggraphUIConnector:
         Call this once per Streamlit rerun (typically at the end of app.py).
         On each rerun it replays the full conversation from agent state, then
         if the user has submitted a new message via st.chat_input, it streams
-        the agent's response.
+        the agent's response. The chat input is disabled while streaming to
+        prevent overlapping requests.
         """
         self._display_history()
-        if user_msg := st.chat_input("Ask away"):
+
+        is_streaming = st.session_state.get("_streaming", False)
+
+        if is_streaming:
+            st.chat_input("Ask away", disabled=True)
+            pending_msg = st.session_state.pop("_pending_msg")
             with st.chat_message("user", avatar="👤"):
-                st.markdown(user_msg)
-            self._stream_response(user_msg)
+                st.markdown(pending_msg)
+            self._stream_response(pending_msg)
+            st.session_state["_streaming"] = False
+            st.rerun()
+        else:
+            if user_msg := st.chat_input("Ask away"):
+                st.session_state["_streaming"] = True
+                st.session_state["_pending_msg"] = user_msg
+                st.rerun()
 
     def _display_history(self):
         """Replay all messages from agent state as Streamlit chat bubbles.
@@ -117,18 +130,28 @@ class StLanggraphUIConnector:
         messages = state.values.get("messages", [])
         tool_buffer = []
         pending_tool_calls = []
+        pending_reasoning = None
         for msg in messages:
             if msg.type == "tool":
                 tool_buffer.append(msg)
             else:
-                if tool_buffer:
-                    self._display_tool_group(pending_tool_calls, tool_buffer)
-                    tool_buffer = []
-                    pending_tool_calls = []
                 tool_calls = getattr(msg, "tool_calls", [])
                 if tool_calls:
-                    pending_tool_calls = tool_calls
+                    pending_tool_calls.extend(tool_calls)
+                    reasoning = msg.additional_kwargs.get("reasoning_content")
+                    if reasoning:
+                        if pending_reasoning is None:
+                            pending_reasoning = reasoning
+                        else:
+                            pending_reasoning += "\n\n" + reasoning
                 else:
+                    if tool_buffer:
+                        self._display_tool_group(
+                            pending_tool_calls, tool_buffer, pending_reasoning
+                        )
+                        tool_buffer = []
+                        pending_tool_calls = []
+                        pending_reasoning = None
                     role = "user" if msg.type == "human" else "assistant"
                     avatar = "👤" if msg.type == "human" else "✨"
                     with st.chat_message(role, avatar=avatar):
@@ -143,11 +166,15 @@ class StLanggraphUIConnector:
                             else msg.content[0]["text"]
                         )
         if tool_buffer:
-            self._display_tool_group(pending_tool_calls, tool_buffer)
+            self._display_tool_group(pending_tool_calls, tool_buffer, pending_reasoning)
 
-    def _display_tool_group(self, tool_calls, tool_msgs):
+    def _display_tool_group(self, tool_calls, tool_msgs, reasoning=None):
         """Render a group of tool invocations and their results in a single
-        collapsed status widget.
+        collapsed status widget, optionally preceded by a thinking expander.
+
+        If the AIMessage that triggered the tool calls also contained
+        reasoning_content, it is displayed in a "Thinking" expander inside its
+        own assistant chat bubble before the tool group.
 
         Pairs each tool_call with its corresponding ToolMessage by matching
         tool_call IDs. For each pair, renders an "Invoking: <name>" expander
@@ -159,7 +186,14 @@ class StLanggraphUIConnector:
                 Each dict has 'name', 'args', and 'id' keys.
             tool_msgs: List of ToolMessage objects. Each has a tool_call_id
                 attribute used to match against tool_calls.
+            reasoning: Optional reasoning_content string from the AIMessage
+                that preceded the tool calls. Displayed in a collapsed
+                "Thinking" expander if present.
         """
+        if reasoning:
+            with st.chat_message("assistant", avatar="✨"):
+                with st.expander("Thinking", expanded=False):
+                    st.markdown(reasoning)
         count = len(tool_msgs)
         label = f"Used {count} tool{'s' if count > 1 else ''}"
         results_by_id = {tm.tool_call_id: tm for tm in tool_msgs}

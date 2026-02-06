@@ -21,8 +21,8 @@ def today_xml():
 
 class DateMathInput(BaseModel):
     base_date: str = Field(description="Base date in the format YYYY-MM-DD")
-    deltas: str = Field(
-        description="Intervals, as defined in delta_type, to add or subtract from the base date, separated by commas"
+    deltas: list[int] = Field(
+        description="Intervals, as defined in delta_type, to add or subtract from the base date"
     )
     delta_type: Literal["day", "week", "month", "year"] = Field(
         description="Type of interval to sum or subtract from base_date. Possible values are: ['day', 'week', 'month', 'year']"
@@ -30,7 +30,7 @@ class DateMathInput(BaseModel):
 
 
 @tool(args_schema=DateMathInput)
-def do_date_math(base_date, deltas, delta_type):
+def do_date_math(base_date, deltas, delta_type) -> list[str]:
     """Adds or subtracts one or more time intervals from a given date in the format YYYY-MM-DD.
     The <deltas></deltas> to be added or subtracted should be separated by commas. Use negative values to subtract, as shown in the <example_deltas></example_deltas>:
 
@@ -51,7 +51,7 @@ def do_date_math(base_date, deltas, delta_type):
     except Exception as e:
         return f"Error: please provide a base_date in the format YYYY-MM-DD. Error: {e}"
 
-    delta_periods = [int(x.strip()) for x in deltas.split(",")]
+    delta_periods = deltas
 
     if delta_type == "day":
         final_deltas = [
@@ -71,4 +71,4 @@ def do_date_math(base_date, deltas, delta_type):
         ]
 
     ans = [(date_object + x).strftime("%Y-%m-%d %A") for x in final_deltas]
-    return ",".join(ans)
+    return ans
