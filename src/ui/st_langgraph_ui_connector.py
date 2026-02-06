@@ -50,7 +50,9 @@ class _StreamState:
 
         Examples: "Used 1 tool", "Used 3 tools".
         """
-        return f"Used {self.tool_call_count} tool{'s' if self.tool_call_count > 1 else ''}"
+        return (
+            f"Used {self.tool_call_count} tool{'s' if self.tool_call_count > 1 else ''}"
+        )
 
 
 class StLanggraphUIConnector:
@@ -135,7 +137,11 @@ class StLanggraphUIConnector:
                             if reasoning:
                                 with st.expander("Thinking", expanded=False):
                                     st.markdown(reasoning)
-                        st.markdown(msg.content if isinstance(msg.content, str) else msg.content[0]["text"])
+                        st.markdown(
+                            msg.content
+                            if isinstance(msg.content, str)
+                            else msg.content[0]["text"]
+                        )
         if tool_buffer:
             self._display_tool_group(pending_tool_calls, tool_buffer)
 
@@ -239,6 +245,15 @@ class StLanggraphUIConnector:
         model_msgs = node_output.get("messages", [])
         for model_msg in model_msgs:
             for tc in getattr(model_msg, "tool_calls", []):
+                if ss.response_container is not None and ss.tools_container is None:
+                    if ss.thinking_status is not None:
+                        ss.thinking_status.update(
+                            label="Thinking complete", state="complete", expanded=False
+                        )
+                        ss.thinking_status = None
+                        ss.thinking_placeholder = None
+                    ss.response_container.__exit__(None, None, None)
+                    ss.response_container = None
                 if ss.tools_container is None:
                     ss.tools_container = st.chat_message("assistant", avatar="🔧")
                     ss.tools_container.__enter__()
@@ -309,6 +324,12 @@ class StLanggraphUIConnector:
         if not text_content:
             return
         if ss.thinking_status is None:
+            if ss.tools_container is not None:
+                ss.tools_status.update(
+                    label=ss.tools_label(), state="complete", expanded=False
+                )
+                ss.tools_container.__exit__(None, None, None)
+                ss.tools_container = None
             if ss.response_container is None:
                 ss.response_container = st.chat_message("assistant", avatar="✨")
                 ss.response_container.__enter__()
@@ -341,9 +362,16 @@ class StLanggraphUIConnector:
         if not text_content:
             return
         if ss.thinking_status is not None and ss.response_placeholder is None:
-            ss.thinking_status.update(label="Thinking complete", state="complete", expanded=False)
+            ss.thinking_status.update(
+                label="Thinking complete", state="complete", expanded=False
+            )
         if ss.tools_status is not None and ss.response_placeholder is None:
-            ss.tools_status.update(label=ss.tools_label(), state="complete", expanded=False)
+            ss.tools_status.update(
+                label=ss.tools_label(), state="complete", expanded=False
+            )
+        if ss.tools_container is not None and ss.response_placeholder is None:
+            ss.tools_container.__exit__(None, None, None)
+            ss.tools_container = None
         if ss.response_placeholder is None:
             if ss.response_container is None:
                 ss.response_container = st.chat_message("assistant", avatar="✨")
@@ -370,9 +398,13 @@ class StLanggraphUIConnector:
             ss: The current _StreamState.
         """
         if ss.thinking_status is not None and ss.response_placeholder is None:
-            ss.thinking_status.update(label="Thinking complete", state="complete", expanded=False)
+            ss.thinking_status.update(
+                label="Thinking complete", state="complete", expanded=False
+            )
         if ss.tools_status is not None:
-            ss.tools_status.update(label=ss.tools_label(), state="complete", expanded=False)
+            ss.tools_status.update(
+                label=ss.tools_label(), state="complete", expanded=False
+            )
         if ss.tools_container is not None:
             ss.tools_container.__exit__(None, None, None)
         if ss.response_container is not None:

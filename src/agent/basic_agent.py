@@ -22,13 +22,11 @@ def build_agent(
     tools=[],
     state_schema=AgentStateSchema,
     checkpointer=None,
-    include_anthropic_caching=True
+    include_anthropic_caching=True,
 ):
-
     @dynamic_prompt
     def replace_sys_prompt_placeholders(request: ModelRequest) -> str:
-        """ Replaces placeholders in the system prompt according to information in the runtime.
-        """
+        """Replaces placeholders in the system prompt according to information in the runtime."""
         replace_dict = request.runtime.context.get("sys_prompt_replace_dict", {})
         base_prompt = system_prompt
         for k in replace_dict:
@@ -43,9 +41,7 @@ def build_agent(
         if include_anthropic_caching:
             sys_msg_content.append({"cachePoint": {"type": "default"}})
 
-        new_prompt = SystemMessage(
-            content=sys_msg_content
-        )
+        new_prompt = SystemMessage(content=sys_msg_content)
         return new_prompt
 
     if checkpointer is None:

@@ -9,4 +9,3 @@ def get_model(model_id="gpt-oss:20b", temperature=0.5, reasoning="low"):
         reasoning=reasoning,
     )
     return model
-

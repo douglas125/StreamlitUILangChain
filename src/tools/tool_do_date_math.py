@@ -21,7 +21,9 @@ def today_xml():
 
 class DateMathInput(BaseModel):
     base_date: str = Field(description="Base date in the format YYYY-MM-DD")
-    deltas: str = Field(description="Intervals, as defined in delta_type, to add or subtract from the base date, separated by commas")
+    deltas: str = Field(
+        description="Intervals, as defined in delta_type, to add or subtract from the base date, separated by commas"
+    )
     delta_type: Literal["day", "week", "month", "year"] = Field(
         description="Type of interval to sum or subtract from base_date. Possible values are: ['day', 'week', 'month', 'year']"
     )
@@ -30,15 +32,15 @@ class DateMathInput(BaseModel):
 @tool(args_schema=DateMathInput)
 def do_date_math(base_date, deltas, delta_type):
     """Adds or subtracts one or more time intervals from a given date in the format YYYY-MM-DD.
-The <deltas></deltas> to be added or subtracted should be separated by commas. Use negative values to subtract, as shown in the <example_deltas></example_deltas>:
+    The <deltas></deltas> to be added or subtracted should be separated by commas. Use negative values to subtract, as shown in the <example_deltas></example_deltas>:
 
-<example_deltas>
-<example_delta>5<example_delta>
-<example_delta>-7, -14, -21<example_delta>
-<example_delta>5, -6, -8<example_delta>
-</example_deltas>
+    <example_deltas>
+    <example_delta>5<example_delta>
+    <example_delta>-7, -14, -21<example_delta>
+    <example_delta>5, -6, -8<example_delta>
+    </example_deltas>
 
-    Raises ValueError: if one of the parameters is invalid."""
+        Raises ValueError: if one of the parameters is invalid."""
 
     allowed_delta_types = ["day", "week", "month", "year"]
     if delta_type not in allowed_delta_types:
