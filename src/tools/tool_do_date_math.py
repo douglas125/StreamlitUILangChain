@@ -10,7 +10,6 @@ from langchain.tools import tool
 def today_xml():
     today = datetime.date.today()
     return (
-        f"Today is "
         f"<today_date>{today.isoformat()}"
         f"<day>{today.day}</day>"
         f"<month>{today.month}</month>"
@@ -29,8 +28,19 @@ class DateMathInput(BaseModel):
     )
 
 
+class DateMathResult(BaseModel):
+    day: int = Field(description="Day of month")
+    month: int = Field(description="Month number")
+    year: int = Field(description="Year number")
+    day_of_week: str = Field(description="Weekday name, e.g. Monday")
+
+
+class DateMathOutput(BaseModel):
+    results: list[DateMathResult]
+
+
 @tool(args_schema=DateMathInput)
-def do_date_math(base_date, deltas, delta_type) -> list[str]:
+def do_date_math(base_date, deltas, delta_type) -> DateMathOutput:
     """Adds or subtracts one or more time intervals from a given date in the format YYYY-MM-DD.
     The <deltas></deltas> to be added or subtracted should be separated by commas. Use negative values to subtract, as shown in the <example_deltas></example_deltas>:
 
@@ -44,12 +54,14 @@ def do_date_math(base_date, deltas, delta_type) -> list[str]:
 
     allowed_delta_types = ["day", "week", "month", "year"]
     if delta_type not in allowed_delta_types:
-        return f"Error: delta_type must be one of {allowed_delta_types}"
+        raise ValueError(f"delta_type must be one of {allowed_delta_types}")
 
     try:
         date_object = datetime.datetime.strptime(base_date, "%Y-%m-%d").date()
     except Exception as e:
-        return f"Error: please provide a base_date in the format YYYY-MM-DD. Error: {e}"
+        raise ValueError(
+            f"please provide a base_date in the format YYYY-MM-DD. Error: {e}"
+        )
 
     delta_periods = deltas
 
@@ -70,5 +82,15 @@ def do_date_math(base_date, deltas, delta_type) -> list[str]:
             dateutil.relativedelta.relativedelta(years=x) for x in delta_periods
         ]
 
-    ans = [(date_object + x).strftime("%Y-%m-%d %A") for x in final_deltas]
-    return ans
+    results = []
+    for delta in final_deltas:
+        d = date_object + delta
+        results.append(
+            DateMathResult(
+                day=d.day,
+                month=d.month,
+                year=d.year,
+                day_of_week=d.strftime("%A"),
+            )
+        )
+    return DateMathOutput(results=results)

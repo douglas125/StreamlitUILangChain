@@ -84,6 +84,11 @@ class StLanggraphUIConnector:
         self.replacement_dict = replacement_dict
         self.thread_id = str(uuid.uuid4())
 
+    def new_thread(self):
+        """Creates a new conversation thread"""
+        self.thread_id = str(uuid.uuid4())
+        st.rerun()
+
     def display_chat(self):
         """Top-level entry point: render history then handle new user input.
 
@@ -96,15 +101,22 @@ class StLanggraphUIConnector:
         self._display_history()
 
         is_streaming = st.session_state.get("_streaming", False)
+        stream_error = st.session_state.pop("_stream_error", None)
+        if stream_error:
+            st.error(stream_error)
 
         if is_streaming:
             st.chat_input("Ask away", disabled=True)
-            pending_msg = st.session_state.pop("_pending_msg")
+            pending_msg = st.session_state.pop("_pending_msg", "")
             with st.chat_message("user", avatar="👤"):
                 st.markdown(pending_msg)
-            self._stream_response(pending_msg)
-            st.session_state["_streaming"] = False
-            st.rerun()
+            try:
+                self._stream_response(pending_msg)
+            except Exception as exc:
+                st.session_state["_stream_error"] = f"Streaming error: {exc}"
+            finally:
+                st.session_state["_streaming"] = False
+                st.rerun()
         else:
             if user_msg := st.chat_input("Ask away"):
                 st.session_state["_streaming"] = True
@@ -238,13 +250,14 @@ class StLanggraphUIConnector:
 
         ss = _StreamState()
 
-        for stream_mode, cur_data in result:
-            if stream_mode == "updates":
-                self._handle_stream_updates(ss, cur_data)
-            elif stream_mode == "messages":
-                self._handle_stream_message(ss, cur_data)
-
-        self._finalize_stream(ss)
+        try:
+            for stream_mode, cur_data in result:
+                if stream_mode == "updates":
+                    self._handle_stream_updates(ss, cur_data)
+                elif stream_mode == "messages":
+                    self._handle_stream_message(ss, cur_data)
+        finally:
+            self._finalize_stream(ss)
 
     def _handle_stream_updates(self, ss, cur_data):
         """Dispatch a node-level update to the appropriate handler.
@@ -286,12 +299,13 @@ class StLanggraphUIConnector:
                         )
                         ss.thinking_status = None
                         ss.thinking_placeholder = None
-                    ss.response_container.__exit__(None, None, None)
                     ss.response_container = None
+                    ss.response_placeholder = None
                 if ss.tools_container is None:
                     ss.tools_container = st.chat_message("assistant", avatar="🔧")
-                    ss.tools_container.__enter__()
-                    ss.tools_status = st.status("Using tools...", expanded=True)
+                    ss.tools_status = ss.tools_container.status(
+                        "Using tools...", expanded=True
+                    )
                 ss.tool_call_count += 1
                 with ss.tools_status:
                     with st.expander(f"Invoking: {tc['name']}"):
@@ -310,12 +324,13 @@ class StLanggraphUIConnector:
             node_output: The "tools" node's output dict containing a
                 "messages" key with a list of ToolMessage objects.
         """
-        tool_msgs = node_output.get("messages", {})
+        tool_msgs = node_output.get("messages", [])
         for tool_msg in tool_msgs:
             if ss.tools_container is None:
                 ss.tools_container = st.chat_message("assistant", avatar="🔧")
-                ss.tools_container.__enter__()
-                ss.tools_status = st.status("Using tools...", expanded=True)
+                ss.tools_status = ss.tools_container.status(
+                    "Using tools...", expanded=True
+                )
             with ss.tools_status:
                 with st.expander(f"Result: {tool_msg.name}"):
                     st.markdown(tool_msg.content)
@@ -362,12 +377,12 @@ class StLanggraphUIConnector:
                 ss.tools_status.update(
                     label=ss.tools_label(), state="complete", expanded=False
                 )
-                ss.tools_container.__exit__(None, None, None)
                 ss.tools_container = None
             if ss.response_container is None:
                 ss.response_container = st.chat_message("assistant", avatar="✨")
-                ss.response_container.__enter__()
-            ss.thinking_status = st.status("Thinking...", expanded=True)
+            ss.thinking_status = ss.response_container.status(
+                "Thinking...", expanded=True
+            )
             ss.thinking_placeholder = ss.thinking_status.empty()
         ss.full_thinking += text_content
         ss.thinking_placeholder.markdown(ss.full_thinking)
@@ -404,13 +419,11 @@ class StLanggraphUIConnector:
                 label=ss.tools_label(), state="complete", expanded=False
             )
         if ss.tools_container is not None and ss.response_placeholder is None:
-            ss.tools_container.__exit__(None, None, None)
             ss.tools_container = None
         if ss.response_placeholder is None:
             if ss.response_container is None:
                 ss.response_container = st.chat_message("assistant", avatar="✨")
-                ss.response_container.__enter__()
-            ss.response_placeholder = st.empty()
+            ss.response_placeholder = ss.response_container.empty()
         ss.full_response += text_content
         ss.response_placeholder.markdown(ss.full_response)
 
@@ -440,6 +453,6 @@ class StLanggraphUIConnector:
                 label=ss.tools_label(), state="complete", expanded=False
             )
         if ss.tools_container is not None:
-            ss.tools_container.__exit__(None, None, None)
+            ss.tools_container = None
         if ss.response_container is not None:
-            ss.response_container.__exit__(None, None, None)
+            ss.response_container = None

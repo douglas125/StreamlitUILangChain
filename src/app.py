@@ -28,6 +28,9 @@ def main():
             agent, replacement_dict=replacement_dict
         )
 
+    with st.sidebar:
+        if st.button("New Chat"):
+            st.session_state.ui_connector.new_thread()
     st.session_state.ui_connector.display_chat()
 
 
