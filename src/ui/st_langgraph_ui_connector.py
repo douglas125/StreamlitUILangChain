@@ -5,6 +5,9 @@ import streamlit as st
 
 from src.ui.media_renderer import get_media_content_from_tool_result
 from src.ui.media_renderer import render_media_content
+from src.ui.next_interaction import parse_next_interaction
+from src.ui.next_interaction import render_next_interaction
+from src.ui.next_interaction import strip_next_interaction_for_streaming
 
 
 class _StreamState:
@@ -34,7 +37,10 @@ class _StreamState:
         tool_call_count: Number of tool invocations seen so far. Used to build
             the collapsed label (e.g. "Used 2 tools").
         full_thinking: Accumulated reasoning text, re-rendered on each token.
-        full_response: Accumulated response text, re-rendered on each token.
+        full_response_raw: Accumulated response text, including any
+            <next_interaction> XML.
+        full_response_display: Response text sanitized for display, with any
+            <next_interaction> XML (or partial tag) removed.
     """
 
     def __init__(self):
@@ -46,7 +52,10 @@ class _StreamState:
         self.tools_status = None
         self.tool_call_count = 0
         self.full_thinking = ""
-        self.full_response = ""
+        self.full_response_raw = ""
+        self.full_response_display = ""
+        self.next_interaction = None
+        self.suggestions_status = None
         self.pending_media = []
 
     def tools_label(self):
@@ -91,6 +100,7 @@ class StLanggraphUIConnector:
     def new_thread(self):
         """Creates a new conversation thread"""
         self.thread_id = str(uuid.uuid4())
+        st.session_state.pop("_next_interaction", None)
         st.rerun()
 
     def display_chat(self):
@@ -102,7 +112,7 @@ class StLanggraphUIConnector:
         the agent's response. The chat input is disabled while streaming to
         prevent overlapping requests.
         """
-        self._display_history()
+        last_next_interaction, message_count = self._display_history()
 
         is_streaming = st.session_state.get("_streaming", False)
         stream_error = st.session_state.pop("_stream_error", None)
@@ -122,7 +132,13 @@ class StLanggraphUIConnector:
                 st.session_state["_streaming"] = False
                 st.rerun()
         else:
-            if user_msg := st.chat_input("Ask away"):
+            saved = st.session_state.get("_next_interaction")
+            next_interaction = saved if saved is not None else last_next_interaction
+            user_msg = render_next_interaction(
+                next_interaction, "Ask away", message_count
+            )
+            if user_msg:
+                st.session_state.pop("_next_interaction", None)
                 st.session_state["_streaming"] = True
                 st.session_state["_pending_msg"] = user_msg
                 st.rerun()
@@ -148,6 +164,7 @@ class StLanggraphUIConnector:
         pending_tool_calls = []
         pending_reasoning = None
         pending_media = []
+        last_next_interaction = None
         for msg in messages:
             if msg.type == "tool":
                 tool_buffer.append(msg)
@@ -179,11 +196,20 @@ class StLanggraphUIConnector:
                             if reasoning:
                                 with st.expander("Thinking", expanded=False):
                                     st.markdown(reasoning)
-                        st.markdown(
+                        content = (
                             msg.content
                             if isinstance(msg.content, str)
                             else msg.content[0]["text"]
                         )
+                        if role == "assistant":
+                            clean_text, next_interaction = parse_next_interaction(
+                                content
+                            )
+                            if next_interaction:
+                                last_next_interaction = next_interaction
+                            st.markdown(clean_text)
+                        else:
+                            st.markdown(content)
                         if role == "assistant" and pending_media:
                             for media in pending_media:
                                 render_media_content(media)
@@ -198,6 +224,7 @@ class StLanggraphUIConnector:
             with st.chat_message("assistant", avatar="âœ¨"):
                 for media in pending_media:
                     render_media_content(media)
+        return last_next_interaction, len(messages)
 
     def _display_tool_group(self, tool_calls, tool_msgs, reasoning=None):
         """Render a group of tool invocations and their results in a single
@@ -283,6 +310,8 @@ class StLanggraphUIConnector:
                     self._handle_stream_message(ss, cur_data)
         finally:
             self._finalize_stream(ss)
+            if ss.next_interaction is not None:
+                st.session_state["_next_interaction"] = ss.next_interaction
 
     def _handle_stream_updates(self, ss, cur_data):
         """Dispatch a node-level update to the appropriate handler.
@@ -453,8 +482,17 @@ class StLanggraphUIConnector:
             if ss.response_container is None:
                 ss.response_container = st.chat_message("assistant", avatar="✨")
             ss.response_placeholder = ss.response_container.empty()
-        ss.full_response += text_content
-        ss.response_placeholder.markdown(ss.full_response)
+        ss.full_response_raw += text_content
+        display_text = strip_next_interaction_for_streaming(ss.full_response_raw)
+        if display_text != ss.full_response_display:
+            ss.full_response_display = display_text
+            ss.response_placeholder.markdown(ss.full_response_display)
+        if ss.suggestions_status is None and len(ss.full_response_raw) > len(
+            display_text
+        ):
+            ss.suggestions_status = ss.response_container.status(
+                "Generating suggestions...", expanded=False
+            )
 
     def _finalize_stream(self, ss):
         """Collapse any status widgets that are still open after streaming ends.
@@ -480,6 +518,17 @@ class StLanggraphUIConnector:
         if ss.tools_status is not None:
             ss.tools_status.update(
                 label=ss.tools_label(), state="complete", expanded=False
+            )
+        if ss.response_placeholder is not None:
+            clean_text, ss.next_interaction = parse_next_interaction(
+                ss.full_response_raw
+            )
+            if clean_text != ss.full_response_display:
+                ss.full_response_display = clean_text
+                ss.response_placeholder.markdown(ss.full_response_display)
+        if ss.suggestions_status is not None:
+            ss.suggestions_status.update(
+                label="Suggestions ready", state="complete", expanded=False
             )
         if ss.pending_media:
             if ss.response_container is None:

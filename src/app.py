@@ -30,7 +30,7 @@ def main():
             system_prompt="You are a helpful assistant."
             + agent_response_structure.RESPONSE_PROMPT,
             tools=all_tools,
-            caching_strategy="",
+            caching_strategy="",  # "bedrock_anthropic",
         )
         # agent = build_agent(llm, tools=all_tools, caching_strategy="bedrock_anthropic")
         # agent = build_agent(llm, tools=all_tools, caching_strategy="anthropic")
