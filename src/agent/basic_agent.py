@@ -22,7 +22,7 @@ def build_agent(
     tools=[],
     state_schema=AgentStateSchema,
     checkpointer=None,
-    include_anthropic_caching=True,
+    caching_strategy="anthropic",  # or bedrock_anthropic
 ):
     @dynamic_prompt
     def replace_sys_prompt_placeholders(request: ModelRequest) -> str:
@@ -38,8 +38,11 @@ def build_agent(
                 "text": base_prompt,
             },
         ]
-        if include_anthropic_caching:
+
+        if caching_strategy == "bedrock_anthropic":
             sys_msg_content.append({"cachePoint": {"type": "default"}})
+        elif caching_strategy == "anthropic":
+            sys_msg_content[0]["cache_control"] = {"type": "ephemeral"}
 
         new_prompt = SystemMessage(content=sys_msg_content)
         return new_prompt
