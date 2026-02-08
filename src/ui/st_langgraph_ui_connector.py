@@ -3,6 +3,9 @@ import uuid
 
 import streamlit as st
 
+from src.ui.media_renderer import get_media_content_from_tool_result
+from src.ui.media_renderer import render_media_content
+
 
 class _StreamState:
     """Mutable container for all state accumulated during a single streaming response.
@@ -44,6 +47,7 @@ class _StreamState:
         self.tool_call_count = 0
         self.full_thinking = ""
         self.full_response = ""
+        self.pending_media = []
 
     def tools_label(self):
         """Return a human-readable label summarizing how many tools were used.
@@ -143,6 +147,7 @@ class StLanggraphUIConnector:
         tool_buffer = []
         pending_tool_calls = []
         pending_reasoning = None
+        pending_media = []
         for msg in messages:
             if msg.type == "tool":
                 tool_buffer.append(msg)
@@ -158,9 +163,11 @@ class StLanggraphUIConnector:
                             pending_reasoning += "\n\n" + reasoning
                 else:
                     if tool_buffer:
-                        self._display_tool_group(
+                        media_items = self._display_tool_group(
                             pending_tool_calls, tool_buffer, pending_reasoning
                         )
+                        if media_items:
+                            pending_media.extend(media_items)
                         tool_buffer = []
                         pending_tool_calls = []
                         pending_reasoning = None
@@ -177,8 +184,20 @@ class StLanggraphUIConnector:
                             if isinstance(msg.content, str)
                             else msg.content[0]["text"]
                         )
+                        if role == "assistant" and pending_media:
+                            for media in pending_media:
+                                render_media_content(media)
+                            pending_media = []
         if tool_buffer:
-            self._display_tool_group(pending_tool_calls, tool_buffer, pending_reasoning)
+            media_items = self._display_tool_group(
+                pending_tool_calls, tool_buffer, pending_reasoning
+            )
+            if media_items:
+                pending_media.extend(media_items)
+        if pending_media:
+            with st.chat_message("assistant", avatar="âœ¨"):
+                for media in pending_media:
+                    render_media_content(media)
 
     def _display_tool_group(self, tool_calls, tool_msgs, reasoning=None):
         """Render a group of tool invocations and their results in a single
@@ -202,6 +221,7 @@ class StLanggraphUIConnector:
                 that preceded the tool calls. Displayed in a collapsed
                 "Thinking" expander if present.
         """
+        media_items = []
         if reasoning:
             with st.chat_message("assistant", avatar="✨"):
                 with st.expander("Thinking", expanded=False):
@@ -216,8 +236,13 @@ class StLanggraphUIConnector:
                         st.code(json.dumps(tc["args"], indent=2), language="json")
                     result_msg = results_by_id.get(tc["id"])
                     if result_msg:
-                        with st.expander(f"Result: {result_msg.name}"):
-                            st.markdown(result_msg.content)
+                        media = get_media_content_from_tool_result(result_msg.content)
+                        if media:
+                            media_items.append(media)
+                        else:
+                            with st.expander(f"Result: {result_msg.name}"):
+                                st.markdown(result_msg.content)
+        return media_items
 
     def _stream_response(self, user_msg):
         """Stream the agent's response for a new user message.
@@ -332,8 +357,12 @@ class StLanggraphUIConnector:
                     "Using tools...", expanded=True
                 )
             with ss.tools_status:
-                with st.expander(f"Result: {tool_msg.name}"):
-                    st.markdown(tool_msg.content)
+                media = get_media_content_from_tool_result(tool_msg.content)
+                if media:
+                    ss.pending_media.append(media)
+                else:
+                    with st.expander(f"Result: {tool_msg.name}"):
+                        st.markdown(tool_msg.content)
 
     def _handle_stream_message(self, ss, cur_data):
         """Route a token-level message chunk to the appropriate handler.
@@ -452,6 +481,15 @@ class StLanggraphUIConnector:
             ss.tools_status.update(
                 label=ss.tools_label(), state="complete", expanded=False
             )
+        if ss.pending_media:
+            if ss.response_container is None:
+                with st.chat_message("assistant", avatar="✨"):
+                    for media in ss.pending_media:
+                        render_media_content(media)
+            else:
+                with ss.response_container:
+                    for media in ss.pending_media:
+                        render_media_content(media)
         if ss.tools_container is not None:
             ss.tools_container = None
         if ss.response_container is not None:

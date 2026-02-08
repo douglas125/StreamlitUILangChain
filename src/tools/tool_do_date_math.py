@@ -40,7 +40,7 @@ class DateMathOutput(BaseModel):
 
 
 @tool(args_schema=DateMathInput)
-def do_date_math(base_date, deltas, delta_type) -> DateMathOutput:
+def do_date_math(base_date, deltas, delta_type) -> str:
     """Adds or subtracts one or more time intervals from a given date in the format YYYY-MM-DD.
     The <deltas></deltas> to be added or subtracted should be separated by commas. Use negative values to subtract, as shown in the <example_deltas></example_deltas>:
 
@@ -93,4 +93,4 @@ def do_date_math(base_date, deltas, delta_type) -> DateMathOutput:
                 day_of_week=d.strftime("%A"),
             )
         )
-    return DateMathOutput(results=results)
+    return DateMathOutput(results=results).model_dump_json()
