@@ -3,6 +3,7 @@ import streamlit as st
 from src.llm.ollama import get_model
 
 # from src.llm.bedrock import get_model
+# from src.llm.anthropic import get_model
 
 from src.agent.basic_agent import build_agent
 from src.ui.st_langgraph_ui_connector import StLanggraphUIConnector
@@ -30,10 +31,8 @@ def main():
             system_prompt="You are a helpful assistant."
             + agent_response_structure.RESPONSE_PROMPT,
             tools=all_tools,
-            caching_strategy="",  # "bedrock_anthropic",
+            caching_strategy="",  # "anthropic" or "bedrock_anthropic",
         )
-        # agent = build_agent(llm, tools=all_tools, caching_strategy="bedrock_anthropic")
-        # agent = build_agent(llm, tools=all_tools, caching_strategy="anthropic")
         replacement_dict = {"[[DATE]]": today_xml()}
         st.session_state.ui_connector = StLanggraphUIConnector(
             agent, replacement_dict=replacement_dict

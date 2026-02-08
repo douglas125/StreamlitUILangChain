@@ -22,7 +22,7 @@ def build_agent(
     tools=[],
     state_schema=AgentStateSchema,
     checkpointer=None,
-    caching_strategy="anthropic",  # or bedrock_anthropic
+    caching_strategy="",  # anthropic or bedrock_anthropic
 ):
     @dynamic_prompt
     def replace_sys_prompt_placeholders(request: ModelRequest) -> str:
