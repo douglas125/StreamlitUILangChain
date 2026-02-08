@@ -55,6 +55,7 @@ class _StreamState:
         self.full_response_raw = ""
         self.full_response_display = ""
         self.next_interaction = None
+        self.parse_error = None
         self.suggestions_status = None
         self.pending_media = []
 
@@ -101,6 +102,7 @@ class StLanggraphUIConnector:
         """Creates a new conversation thread"""
         self.thread_id = str(uuid.uuid4())
         st.session_state.pop("_next_interaction", None)
+        st.session_state.pop("_next_interaction_parse_error", None)
         st.rerun()
 
     def display_chat(self):
@@ -112,7 +114,7 @@ class StLanggraphUIConnector:
         the agent's response. The chat input is disabled while streaming to
         prevent overlapping requests.
         """
-        last_next_interaction, message_count = self._display_history()
+        last_next_interaction, message_count, last_parse_error = self._display_history()
 
         is_streaming = st.session_state.get("_streaming", False)
         stream_error = st.session_state.pop("_stream_error", None)
@@ -133,12 +135,15 @@ class StLanggraphUIConnector:
                 st.rerun()
         else:
             saved = st.session_state.get("_next_interaction")
+            saved_error = st.session_state.get("_next_interaction_parse_error")
             next_interaction = saved if saved is not None else last_next_interaction
+            parse_error = saved_error if saved is not None else last_parse_error
             user_msg = render_next_interaction(
-                next_interaction, "Ask away", message_count
+                next_interaction, "Ask away", message_count, parse_error
             )
             if user_msg:
                 st.session_state.pop("_next_interaction", None)
+                st.session_state.pop("_next_interaction_parse_error", None)
                 st.session_state["_streaming"] = True
                 st.session_state["_pending_msg"] = user_msg
                 st.rerun()
@@ -165,6 +170,7 @@ class StLanggraphUIConnector:
         pending_reasoning = None
         pending_media = []
         last_next_interaction = None
+        last_parse_error = None
         for msg in messages:
             if msg.type == "tool":
                 tool_buffer.append(msg)
@@ -202,11 +208,20 @@ class StLanggraphUIConnector:
                             else msg.content[0]["text"]
                         )
                         if role == "assistant":
-                            clean_text, next_interaction = parse_next_interaction(
-                                content
-                            )
-                            if next_interaction:
+                            (
+                                clean_text,
+                                next_interaction,
+                                parse_error,
+                            ) = parse_next_interaction(content)
+                            if parse_error:
+                                last_parse_error = parse_error
+                                last_next_interaction = None
+                            elif next_interaction:
+                                last_parse_error = None
                                 last_next_interaction = next_interaction
+                            else:
+                                last_parse_error = None
+                                last_next_interaction = None
                             st.markdown(clean_text)
                         else:
                             st.markdown(content)
@@ -224,7 +239,7 @@ class StLanggraphUIConnector:
             with st.chat_message("assistant", avatar="âœ¨"):
                 for media in pending_media:
                     render_media_content(media)
-        return last_next_interaction, len(messages)
+        return last_next_interaction, len(messages), last_parse_error
 
     def _display_tool_group(self, tool_calls, tool_msgs, reasoning=None):
         """Render a group of tool invocations and their results in a single
@@ -312,6 +327,10 @@ class StLanggraphUIConnector:
             self._finalize_stream(ss)
             if ss.next_interaction is not None:
                 st.session_state["_next_interaction"] = ss.next_interaction
+            if ss.parse_error is not None:
+                st.session_state["_next_interaction_parse_error"] = ss.parse_error
+            else:
+                st.session_state.pop("_next_interaction_parse_error", None)
 
     def _handle_stream_updates(self, ss, cur_data):
         """Dispatch a node-level update to the appropriate handler.
@@ -520,7 +539,7 @@ class StLanggraphUIConnector:
                 label=ss.tools_label(), state="complete", expanded=False
             )
         if ss.response_placeholder is not None:
-            clean_text, ss.next_interaction = parse_next_interaction(
+            clean_text, ss.next_interaction, ss.parse_error = parse_next_interaction(
                 ss.full_response_raw
             )
             if clean_text != ss.full_response_display:
