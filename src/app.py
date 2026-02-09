@@ -25,6 +25,8 @@ def main():
     # create agent and ui connector once
     if "ui_connector" not in st.session_state:
         llm = get_model()
+        # llm = get_model(model_id="gpt-oss:20b", temperature=0.5, reasoning="low", top_k=40, top_p=0.9)
+
         all_tools = [do_date_math, tool_show_media]
         agent = build_agent(
             llm,
