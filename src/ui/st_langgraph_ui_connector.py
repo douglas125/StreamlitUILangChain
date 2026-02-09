@@ -93,9 +93,9 @@ class StLanggraphUIConnector:
             Passed to the agent via the context parameter on each stream call.
     """
 
-    def __init__(self, agent, replacement_dict={}):
+    def __init__(self, agent, replacement_dict=None):
         self.agent = agent
-        self.replacement_dict = replacement_dict
+        self.replacement_dict = replacement_dict if replacement_dict is not None else {}
         self.thread_id = str(uuid.uuid4())
 
     def new_thread(self):
