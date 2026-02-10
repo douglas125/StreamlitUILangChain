@@ -1,48 +1,56 @@
 import streamlit as st
 
-from src.llm.ollama import get_model
-
-# from src.llm.bedrock import get_model
-# from src.llm.anthropic import get_model
-
-from src.agent.basic_agent import build_agent
-from src.ui.st_langgraph_ui_connector import StLanggraphUIConnector
-
-from src.tools.tool_do_date_math import today_xml
-from src.tools.tool_do_date_math import do_date_math
-from src.tools.tool_show_media import tool_show_media
-
-from src.agent import agent_response_structure
+from src.app_config import build_sidebar_config
+from src.app_config import build_ui_connector
+from src.app_config import reset_stream_state
+from src.app_config import should_rebuild_connector
 
 
 def main():
     st.set_page_config(
         page_title="Chat interface for Streamlit using Langgraph",
-        page_icon="🧊",
+        page_icon="Chat",
     )
     st.title("Chat interface for Streamlit using Langgraph")
 
-    # create agent and ui connector once
-    if "ui_connector" not in st.session_state:
-        llm = get_model()
-        # llm = get_model(model_id="gpt-oss:20b", temperature=0.5, reasoning="low", top_k=40, top_p=0.9)
-
-        all_tools = [do_date_math, tool_show_media]
-        agent = build_agent(
-            llm,
-            system_prompt="You are a helpful assistant."
-            + agent_response_structure.RESPONSE_PROMPT,
-            tools=all_tools,
-            caching_strategy="",  # "anthropic" or "bedrock_anthropic",
-        )
-        replacement_dict = {"[[DATE]]": today_xml()}
-        st.session_state.ui_connector = StLanggraphUIConnector(
-            agent, replacement_dict=replacement_dict
-        )
+    llm_config = build_sidebar_config()
+    with st.sidebar:
+        with st.expander("Model Config", expanded=False):
+            system_prompt = st.text_area(
+                "System prompt",
+                value=st.session_state.get(
+                    "system_prompt_text", "You are a helpful assistant."
+                ),
+                key="system_prompt_text",
+                help="This is passed as the system prompt to the model.",
+            )
+            enable_widgets = st.checkbox(
+                "Enable widget capabilities",
+                value=st.session_state.get("enable_widgets", True),
+                key="enable_widgets",
+            )
+            enable_date_math = st.checkbox(
+                "Enable date math tool",
+                value=st.session_state.get("enable_date_math", True),
+                key="enable_date_math",
+            )
+            enable_media_tool = st.checkbox(
+                "Enable media tool",
+                value=st.session_state.get("enable_media_tool", True),
+                key="enable_media_tool",
+            )
+    llm_config["system_prompt"] = system_prompt
+    llm_config["enable_widgets"] = enable_widgets
+    llm_config["enable_date_math"] = enable_date_math
+    llm_config["enable_media_tool"] = enable_media_tool
+    if should_rebuild_connector(llm_config):
+        st.session_state.ui_connector = build_ui_connector(llm_config)
+        reset_stream_state()
 
     with st.sidebar:
         if st.button("New Chat"):
             st.session_state.ui_connector.new_thread()
+        st.session_state.ui_connector.render_sidebar_token_usage()
     st.session_state.ui_connector.display_chat()
 
 

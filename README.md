@@ -1,6 +1,6 @@
 # Streamlit UI for LangChain Agents
 
-Drop-in Streamlit chat interface for any LangGraph agent. Handles streaming, thinking tokens, tool calls, and interactive follow-up widgets — so you just wire up your model and go.
+Drop-in Streamlit chat interface for any LangGraph agent. Handles streaming, thinking tokens, tool calls, and interactive follow-up widgets -- so you just wire up your model and go.
 
 ## Features
 
@@ -9,6 +9,7 @@ Drop-in Streamlit chat interface for any LangGraph agent. Handles streaming, thi
 - Interactive follow-up widgets (yes/no buttons, radio, multi-select checkboxes)
 - Free-text input always available alongside widgets
 - System prompt placeholder replacement at runtime
+- Token usage summary (demo app) with detailed per-invocation stats
 
 ## Quick Start
 
@@ -23,7 +24,7 @@ st.title("My Chat App")
 
 if "ui_connector" not in st.session_state:
     # 1. Create your model
-    llm = ChatOllama(model="gpt-oss:20b", temperature=0.5)
+    llm = ChatOllama(model="qwen3:8b", temperature=0.5)
 
     # 2. Build a LangGraph agent (append RESPONSE_PROMPT for interactive widgets)
     agent = build_agent(
@@ -66,3 +67,4 @@ with st.sidebar:
 conda activate st_lc_env
 python -m streamlit run src/app.py
 ```
+

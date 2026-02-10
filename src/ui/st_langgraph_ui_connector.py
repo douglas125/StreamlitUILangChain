@@ -8,6 +8,8 @@ from src.ui.media_renderer import render_media_content
 from src.ui.next_interaction import parse_next_interaction
 from src.ui.next_interaction import render_next_interaction
 from src.ui.next_interaction import strip_next_interaction_for_streaming
+from src.ui.token_usage import format_usage_table
+from src.ui.token_usage import get_thread_token_usage
 
 
 class _StreamState:
@@ -97,6 +99,30 @@ class StLanggraphUIConnector:
         self.agent = agent
         self.replacement_dict = replacement_dict if replacement_dict is not None else {}
         self.thread_id = str(uuid.uuid4())
+
+    def render_sidebar_token_usage(self):
+        """Render aggregated token usage for the current thread in the sidebar."""
+        totals, seen = get_thread_token_usage(self.agent, self.thread_id)
+        with st.expander("Token Usage", expanded=False):
+            rows = [
+                ("Input tokens", "input_tokens"),
+                ("Output tokens", "output_tokens"),
+                ("Total tokens", "total_tokens"),
+                ("Cache read input tokens", "cache_read_input_tokens"),
+                ("Cache creation input tokens", "cache_creation_input_tokens"),
+                ("Ephemeral 5m input tokens", "ephemeral_5m_input_tokens"),
+                ("Ephemeral 1h input tokens", "ephemeral_1h_input_tokens"),
+            ]
+            data = []
+            for label, key in rows:
+                if seen.get(key):
+                    value = totals.get(key, 0)
+                else:
+                    value = "n/a"
+                data.append({"Metric": label, "Value": value})
+            st.markdown(format_usage_table(data))
+            if st.button("Detailed statistics", key="token_usage_details"):
+                st.switch_page("pages/Token_Usage_Details.py")
 
     def new_thread(self):
         """Creates a new conversation thread"""
