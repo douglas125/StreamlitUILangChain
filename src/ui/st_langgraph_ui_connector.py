@@ -1,5 +1,6 @@
 import base64
 import json
+import time
 import uuid
 
 import streamlit as st
@@ -11,6 +12,7 @@ from src.ui.next_interaction import render_next_interaction
 from src.ui.next_interaction import strip_next_interaction_for_streaming
 from src.ui.token_usage import format_usage_table
 from src.ui.token_usage import get_thread_token_usage
+from src.ui.timing_metrics import record_thread_timing
 
 _SUPPORTED_IMAGE_TYPES = ["png", "jpg", "jpeg", "webp"]
 
@@ -143,6 +145,8 @@ class _StreamState:
         self.parse_error = None
         self.suggestions_status = None
         self.pending_media = []
+        self.start_time = None
+        self.first_token_time = None
 
     def tools_label(self):
         """Return a human-readable label summarizing how many tools were used.
@@ -269,6 +273,7 @@ class StLanggraphUIConnector:
                 st.session_state.pop("_next_interaction", None)
                 st.session_state.pop("_next_interaction_parse_error", None)
                 st.session_state["_streaming"] = True
+                st.session_state["_stream_start_time"] = time.perf_counter()
                 st.session_state["_pending_msg"] = user_msg or ""
                 st.session_state["_pending_images_to_send"] = pending_images
                 st.session_state["_pending_images"] = []
@@ -444,6 +449,8 @@ class StLanggraphUIConnector:
         )
 
         ss = _StreamState()
+        start_time = st.session_state.pop("_stream_start_time", None)
+        ss.start_time = start_time if start_time is not None else time.perf_counter()
 
         try:
             for stream_mode, cur_data in result:
@@ -453,6 +460,7 @@ class StLanggraphUIConnector:
                     self._handle_stream_message(ss, cur_data)
         finally:
             self._finalize_stream(ss)
+            self._record_stream_timing(ss)
             if ss.next_interaction is not None:
                 st.session_state["_next_interaction"] = ss.next_interaction
             if ss.parse_error is not None:
@@ -577,6 +585,7 @@ class StLanggraphUIConnector:
         text_content = token.additional_kwargs["reasoning_content"]
         if not text_content:
             return
+        self._mark_first_token_time(ss)
         if ss.thinking_status is None:
             if ss.tools_container is not None:
                 ss.tools_status.update(
@@ -615,6 +624,7 @@ class StLanggraphUIConnector:
         text_content = block["text"]
         if not text_content:
             return
+        self._mark_first_token_time(ss)
         if ss.thinking_status is not None and ss.response_placeholder is None:
             ss.thinking_status.update(
                 label="Thinking complete", state="complete", expanded=False
@@ -690,6 +700,20 @@ class StLanggraphUIConnector:
             ss.tools_container = None
         if ss.response_container is not None:
             ss.response_container = None
+
+    def _mark_first_token_time(self, ss):
+        if ss.first_token_time is None:
+            ss.first_token_time = time.perf_counter()
+
+    def _record_stream_timing(self, ss):
+        if ss.start_time is None:
+            return
+        total_seconds = time.perf_counter() - ss.start_time
+        if ss.first_token_time is None:
+            ttft_seconds = None
+        else:
+            ttft_seconds = ss.first_token_time - ss.start_time
+        record_thread_timing(self.thread_id, ttft_seconds, total_seconds)
 
     def _render_image_uploader(self, message_count):
         uploader_key = st.session_state.get("_image_uploader_key", 0)

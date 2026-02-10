@@ -29,6 +29,7 @@ src/
     st_langgraph_ui_connector.py   # Streamlit UI + LangGraph streaming + thinking tokens
     next_interaction.py            # Parse, strip, and render <next_interaction> XML as widgets
     token_usage.py                 # Token usage extraction helpers
+    timing_metrics.py              # TTFT and total timing metrics per invocation
   pages/
     Token_Usage_Details.py         # Per-invocation token usage chart
   tools/

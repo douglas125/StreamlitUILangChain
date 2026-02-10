@@ -1,3 +1,9 @@
+from src.ui.timing_metrics import append_missing_timing_rows
+from src.ui.timing_metrics import build_rows_from_timings
+from src.ui.timing_metrics import get_thread_time_metrics
+from src.ui.timing_metrics import merge_invocation_timings
+
+
 def get_thread_token_usage(agent, thread_id):
     """Aggregate token usage from checkpointed messages for a thread."""
     state = agent.get_state({"configurable": {"thread_id": thread_id}})
@@ -9,7 +15,16 @@ def get_thread_token_usage_invocations(agent, thread_id):
     """Return per-invocation token usage rows for a thread."""
     state = agent.get_state({"configurable": {"thread_id": thread_id}})
     messages = state.values.get("messages", [])
-    return extract_invocation_usage(messages)
+    rows = extract_invocation_usage(messages)
+    timings = get_thread_time_metrics(thread_id)
+    if not rows and timings:
+        return build_rows_from_timings(timings, zero_token_usage)
+    if rows and timings:
+        merge_invocation_timings(rows, timings)
+        append_missing_timing_rows(rows, timings)
+    if rows:
+        add_output_tokens_per_second(rows)
+    return rows
 
 
 def aggregate_token_usage(messages):
@@ -249,6 +264,34 @@ def build_invocation_metadata_rows(invocations):
                 "Invocation": row.get("invocation"),
                 "Model": row.get("model_name") or "unknown",
                 "Provider": row.get("model_provider") or "unknown",
+                "TTFT (s)": row.get("ttft_seconds"),
+                "Total (s)": row.get("total_seconds"),
+                "Output tok/s": row.get("output_tokens_per_second"),
             }
         )
     return rows
+
+
+def add_output_tokens_per_second(rows):
+    for row in rows:
+        row["output_tokens_per_second"] = compute_output_tokens_per_second(row)
+
+
+def compute_output_tokens_per_second(row):
+    output_tokens = row.get("output_tokens")
+    total_seconds = row.get("total_seconds")
+    ttft_seconds = row.get("ttft_seconds")
+    if output_tokens is None or total_seconds is None or ttft_seconds is None:
+        return None
+    try:
+        output_tokens_value = float(output_tokens)
+        total_seconds_value = float(total_seconds)
+        ttft_seconds_value = float(ttft_seconds)
+    except (TypeError, ValueError):
+        return None
+    if output_tokens_value <= 0:
+        return None
+    active_seconds = total_seconds_value - ttft_seconds_value
+    if active_seconds <= 0:
+        return None
+    return output_tokens_value / active_seconds
