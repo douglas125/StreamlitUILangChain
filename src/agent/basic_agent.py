@@ -19,11 +19,14 @@ class AgentStateSchema(TypedDict):
 def build_agent(
     llm_model,
     system_prompt="You are a helpful assistant. Today is [[DATE]].",
-    tools=[],
+    tools=None,
     state_schema=AgentStateSchema,
     checkpointer=None,
     caching_strategy="",  # anthropic or bedrock_anthropic
 ):
+    if tools is None:
+        tools = []
+
     @dynamic_prompt
     def replace_sys_prompt_placeholders(request: ModelRequest) -> str:
         """Replaces placeholders in the system prompt according to information in the runtime."""

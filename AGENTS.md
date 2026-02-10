@@ -33,6 +33,7 @@ src/
     Token_Usage_Details.py         # Per-invocation token usage chart
   tools/
     tool_do_date_math.py           # Date math tool + today_xml() helper
+    tool_show_media.py             # Media rendering tool helper
 ```
 
 ## Architecture
@@ -57,6 +58,7 @@ src/
 - `_stream_response(user_msg)` streams agent output with containers for thinking, tools, and response.
 - `_finalize_stream(ss)` collapses status widgets and parses `<next_interaction>` XML.
 - Token usage summary appears in the sidebar; detailed per-invocation chart lives in `pages/Token_Usage_Details.py`.
+- Supports user image attachments (multiple files).
 - Note: Streamlit charts should use `width="stretch"` instead of `use_container_width=True` (deprecated after 2025-12-31).
 
 ### Next interaction widgets (`src/ui/next_interaction.py`)
@@ -67,14 +69,15 @@ src/
 ### Tools (`src/tools/`)
 - `do_date_math` adds/subtracts day/week/month/year intervals from a date. Uses `dateutil.relativedelta`.
 - `today_xml()` returns today's date in XML format for the system prompt `[[DATE]]` placeholder.
+- `tool_show_media` renders image/audio/video links in the chat UI.
 
 ## Key Dependencies
 - `streamlit`, `langchain`, `langchain-core`, `langgraph`, `langsmith`
 - Provider packages: `langchain-ollama`, `langchain-aws`, `langchain-openai`, `langchain-anthropic`
-- `boto3` (for Bedrock), `dateutil` (for date math tool)
+- `boto3` (for Bedrock), `dateutil` (for date math tool), `altair` (token usage charts)
 
 ## Conventions
-- Avatars: `??` for user, `?` for assistant.
+- Avatars: `👤` for user, `✨` for assistant, `🔧` for tool calls.
 - System prompt placeholders use double-bracket syntax: `[[PLACEHOLDER]]`.
 - `app.py` stores the `StLanggraphUIConnector` in `st.session_state.ui_connector` (created once per session).
 - Do not use `continue` in loops. Use `if/else` branching instead.
