@@ -1,3 +1,4 @@
+import base64
 import json
 import uuid
 
@@ -10,6 +11,88 @@ from src.ui.next_interaction import render_next_interaction
 from src.ui.next_interaction import strip_next_interaction_for_streaming
 from src.ui.token_usage import format_usage_table
 from src.ui.token_usage import get_thread_token_usage
+
+_SUPPORTED_IMAGE_TYPES = ["png", "jpg", "jpeg", "webp"]
+
+
+def _normalize_uploaded_image(uploaded_file):
+    if uploaded_file is None:
+        return None
+    raw_bytes = uploaded_file.getvalue()
+    if not raw_bytes:
+        return None
+    return {
+        "base64": base64.b64encode(raw_bytes).decode("ascii"),
+        "mime_type": uploaded_file.type or "image/png",
+        "name": uploaded_file.name,
+    }
+
+
+def _build_user_content_blocks(user_msg, image_payloads):
+    blocks = []
+    if user_msg:
+        blocks.append({"type": "text", "text": user_msg})
+    if image_payloads:
+        for image_payload in image_payloads:
+            if image_payload:
+                blocks.append(
+                    {
+                        "type": "image",
+                        "base64": image_payload["base64"],
+                        "mime_type": image_payload["mime_type"],
+                    }
+                )
+    return blocks
+
+
+def _render_image_payload(image_payload):
+    if not image_payload:
+        return
+    url = image_payload.get("url") if isinstance(image_payload, dict) else None
+    if url:
+        st.image(url)
+        return
+    base64_data = (
+        image_payload.get("base64") if isinstance(image_payload, dict) else None
+    )
+    if base64_data:
+        try:
+            st.image(base64.b64decode(base64_data))
+        except Exception:
+            st.caption("Image could not be rendered.")
+
+
+def _extract_text_and_images(content):
+    if isinstance(content, str):
+        return content, []
+    if not isinstance(content, list):
+        return "", []
+    text_parts = []
+    images = []
+    for block in content:
+        if not isinstance(block, dict):
+            pass
+        else:
+            block_type = block.get("type")
+            if block_type == "text":
+                text = block.get("text")
+                if text:
+                    text_parts.append(text)
+            elif block_type == "image":
+                if block.get("url"):
+                    images.append({"url": block.get("url")})
+                elif block.get("base64"):
+                    images.append(
+                        {
+                            "base64": block.get("base64"),
+                            "mime_type": block.get("mime_type"),
+                        }
+                    )
+            elif block_type == "image_url":
+                image_url = block.get("image_url") or {}
+                if isinstance(image_url, dict) and image_url.get("url"):
+                    images.append({"url": image_url.get("url")})
+    return "\n\n".join(text_parts).strip(), images
 
 
 class _StreamState:
@@ -150,10 +233,14 @@ class StLanggraphUIConnector:
         if is_streaming:
             st.chat_input("Ask away", disabled=True)
             pending_msg = st.session_state.pop("_pending_msg", "")
+            pending_images = st.session_state.pop("_pending_images_to_send", [])
             with st.chat_message("user", avatar="👤"):
-                st.markdown(pending_msg)
+                if pending_msg:
+                    st.markdown(pending_msg)
+                for image_payload in pending_images:
+                    _render_image_payload(image_payload)
             try:
-                self._stream_response(pending_msg)
+                self._stream_response(pending_msg, pending_images)
             except Exception as exc:
                 st.session_state["_stream_error"] = f"Streaming error: {exc}"
             finally:
@@ -164,14 +251,23 @@ class StLanggraphUIConnector:
             saved_error = st.session_state.get("_next_interaction_parse_error")
             next_interaction = saved if saved is not None else last_next_interaction
             parse_error = saved_error if saved is not None else last_parse_error
+            pending_images = self._render_image_uploader(message_count)
             user_msg = render_next_interaction(
                 next_interaction, "Ask away", message_count, parse_error
             )
-            if user_msg:
+            send_images_only = False
+            if pending_images:
+                send_images_only = st.button("Send images", key="send_images_only")
+            if user_msg or send_images_only:
                 st.session_state.pop("_next_interaction", None)
                 st.session_state.pop("_next_interaction_parse_error", None)
                 st.session_state["_streaming"] = True
-                st.session_state["_pending_msg"] = user_msg
+                st.session_state["_pending_msg"] = user_msg or ""
+                st.session_state["_pending_images_to_send"] = pending_images
+                st.session_state["_pending_images"] = []
+                st.session_state["_image_uploader_key"] = (
+                    st.session_state.get("_image_uploader_key", 0) + 1
+                )
                 st.rerun()
 
     def _display_history(self):
@@ -228,17 +324,13 @@ class StLanggraphUIConnector:
                             if reasoning:
                                 with st.expander("Thinking", expanded=False):
                                     st.markdown(reasoning)
-                        content = (
-                            msg.content
-                            if isinstance(msg.content, str)
-                            else msg.content[0]["text"]
-                        )
+                        content_text, images = _extract_text_and_images(msg.content)
                         if role == "assistant":
                             (
                                 clean_text,
                                 next_interaction,
                                 parse_error,
-                            ) = parse_next_interaction(content)
+                            ) = parse_next_interaction(content_text)
                             if parse_error:
                                 last_parse_error = parse_error
                                 last_next_interaction = None
@@ -248,9 +340,14 @@ class StLanggraphUIConnector:
                             else:
                                 last_parse_error = None
                                 last_next_interaction = None
-                            st.markdown(clean_text)
+                            if clean_text:
+                                st.markdown(clean_text)
                         else:
-                            st.markdown(content)
+                            if content_text:
+                                st.markdown(content_text)
+                        if images:
+                            for image_payload in images:
+                                _render_image_payload(image_payload)
                         if role == "assistant" and pending_media:
                             for media in pending_media:
                                 render_media_content(media)
@@ -312,7 +409,7 @@ class StLanggraphUIConnector:
                                 st.markdown(result_msg.content)
         return media_items
 
-    def _stream_response(self, user_msg):
+    def _stream_response(self, user_msg, image_payloads=None):
         """Stream the agent's response for a new user message.
 
         Sends the user message to the agent and iterates the stream, which
@@ -330,10 +427,8 @@ class StLanggraphUIConnector:
         Args:
             user_msg: The user's input text.
         """
-        cur_user_msg = {
-            "role": "user",
-            "content": [{"type": "text", "text": user_msg}],
-        }
+        content_blocks = _build_user_content_blocks(user_msg, image_payloads)
+        cur_user_msg = {"role": "user", "content": content_blocks}
         result = self.agent.stream(
             {"messages": [cur_user_msg]},
             config={"configurable": {"thread_id": self.thread_id}},
@@ -588,3 +683,22 @@ class StLanggraphUIConnector:
             ss.tools_container = None
         if ss.response_container is not None:
             ss.response_container = None
+
+    def _render_image_uploader(self, message_count):
+        uploader_key = st.session_state.get("_image_uploader_key", 0)
+        uploaded = st.file_uploader(
+            "Attach images",
+            type=_SUPPORTED_IMAGE_TYPES,
+            accept_multiple_files=True,
+            key=f"image_uploader_{uploader_key}",
+        )
+        image_payloads = []
+        if uploaded:
+            for uploaded_file in uploaded:
+                payload = _normalize_uploaded_image(uploaded_file)
+                if payload:
+                    image_payloads.append(payload)
+        st.session_state["_pending_images"] = image_payloads
+        if image_payloads:
+            st.caption(f"{len(image_payloads)} image(s) attached.")
+        return image_payloads
