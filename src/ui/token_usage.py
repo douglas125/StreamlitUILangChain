@@ -39,7 +39,10 @@ def extract_invocation_usage(messages):
         else:
             invocation += 1
             row = normalize_usage_values(usage)
+            model_name, model_provider = extract_model_provider_from_message(msg)
             row["invocation"] = invocation
+            row["model_name"] = model_name
+            row["model_provider"] = model_provider
             rows.append(row)
     return rows
 
@@ -85,9 +88,7 @@ def usage_from_response_usage(usage):
     result["input_tokens"] = coerce_int(usage.get("input_tokens"))
     result["output_tokens"] = coerce_int(usage.get("output_tokens"))
     result["total_tokens"] = coerce_int(usage.get("total_tokens"))
-    result["cache_read_input_tokens"] = coerce_int(
-        usage.get("cache_read_input_tokens")
-    )
+    result["cache_read_input_tokens"] = coerce_int(usage.get("cache_read_input_tokens"))
     result["cache_creation_input_tokens"] = coerce_int(
         usage.get("cache_creation_input_tokens")
     )
@@ -113,6 +114,22 @@ def usage_from_ollama_metadata(response_metadata):
     if usage["input_tokens"] is None and usage["output_tokens"] is None:
         return None
     return usage
+
+
+def extract_model_provider_from_message(msg):
+    response_metadata = getattr(msg, "response_metadata", None)
+    model_name = None
+    model_provider = None
+    if isinstance(response_metadata, dict) and response_metadata:
+        model_name = response_metadata.get("model_name")
+        if model_name is None:
+            model_name = response_metadata.get("model")
+        if model_name is None:
+            model_name = response_metadata.get("model_id")
+        model_provider = response_metadata.get("model_provider")
+        if model_provider is None:
+            model_provider = response_metadata.get("provider")
+    return model_name, model_provider
 
 
 def fill_total_tokens(usage):
@@ -195,6 +212,8 @@ def build_invocation_usage_long_form(invocations, metrics, metric_labels):
                     "metric": metric,
                     "metric_label": label,
                     "tokens": row.get(metric, 0),
+                    "model_name": row.get("model_name"),
+                    "model_provider": row.get("model_provider"),
                 }
             )
     return data
@@ -220,3 +239,16 @@ def get_usage_metric_keys():
         "ephemeral_5m_input_tokens",
         "ephemeral_1h_input_tokens",
     ]
+
+
+def build_invocation_metadata_rows(invocations):
+    rows = []
+    for row in invocations:
+        rows.append(
+            {
+                "Invocation": row.get("invocation"),
+                "Model": row.get("model_name") or "unknown",
+                "Provider": row.get("model_provider") or "unknown",
+            }
+        )
+    return rows

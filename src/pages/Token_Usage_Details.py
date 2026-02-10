@@ -2,6 +2,7 @@ import altair as alt
 import streamlit as st
 
 from src.ui.token_usage import build_invocation_usage_long_form
+from src.ui.token_usage import build_invocation_metadata_rows
 from src.ui.token_usage import get_thread_token_usage_invocations
 from src.ui.token_usage import get_usage_metric_keys
 from src.ui.token_usage import get_usage_metric_labels
@@ -30,6 +31,7 @@ def main():
     long_data = build_invocation_usage_long_form(
         invocations, metric_keys, metric_labels
     )
+    metadata_rows = build_invocation_metadata_rows(invocations)
 
     chart = (
         alt.Chart(alt.Data(values=long_data))
@@ -42,12 +44,22 @@ def main():
                 title="Metric",
                 sort=[metric_labels[key] for key in metric_keys],
             ),
-            tooltip=["invocation:O", "metric_label:N", "tokens:Q"],
+            tooltip=[
+                "invocation:O",
+                "metric_label:N",
+                "tokens:Q",
+                "model_name:N",
+                "model_provider:N",
+            ],
         )
     )
 
     st.altair_chart(chart, width="stretch")
-    st.caption("Totals are stacked by metric. Total tokens are not shown to avoid double counting.")
+    st.caption(
+        "Totals are stacked by metric. Total tokens are not shown to avoid double counting."
+    )
+    st.markdown("**Invocation details**")
+    st.dataframe(metadata_rows, hide_index=True)
     st.page_link("app.py", label="Back to chat")
 
 
