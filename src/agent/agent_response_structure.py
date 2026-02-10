@@ -1,7 +1,8 @@
 RESPONSE_PROMPT = """<provide_user_guidance>
-After your response, prefer to append a <next_interaction> XML block. Write it
+After your response, prefer to append a <next_interaction></next_interaction> XML block. Write it
 as raw XML at the very end - no Markdown fences, no text after it. Only omit
-the block when free-form input is clearly better.
+the block when free-form input is clearly better. Output at most ONE
+<next_interaction></next_interaction> block per response; never generate multiple blocks.
 
 Format:
 <next_interaction>

@@ -80,5 +80,6 @@ src/
 ## Conventions
 - Avatars: `👤` for user, `✨` for assistant, `🔧` for tool calls.
 - System prompt placeholders use double-bracket syntax: `[[PLACEHOLDER]]`.
+- When writing prompts and referring to XML sections, use paired tags like `<xml_section></xml_section>` (not `<xml_section>`).
 - `app.py` stores the `StLanggraphUIConnector` in `st.session_state.ui_connector` (created once per session).
 - Do not use `continue` in loops. Use `if/else` branching instead.
