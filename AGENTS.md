@@ -58,7 +58,7 @@ src/
 - `_stream_response(user_msg)` streams agent output with containers for thinking, tools, and response.
 - `_finalize_stream(ss)` collapses status widgets and parses `<next_interaction>` XML.
 - Token usage summary appears in the sidebar; detailed per-invocation chart lives in `pages/Token_Usage_Details.py`.
-- Supports user image attachments (multiple files).
+- Supports user image attachments (multiple files) when Image support is enabled in the sidebar.
 - Note: Streamlit charts should use `width="stretch"` instead of `use_container_width=True` (deprecated after 2025-12-31).
 
 ### Next interaction widgets (`src/ui/next_interaction.py`)

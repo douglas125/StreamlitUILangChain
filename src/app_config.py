@@ -28,6 +28,11 @@ def build_sidebar_config():
                 model_id = st.text_input(
                     "Model ID", value="qwen3:8b", key="ollama_model_id"
                 )
+                image_support = st.checkbox(
+                    "Image support",
+                    value=st.session_state.get("ollama_image_support", False),
+                    key="ollama_image_support",
+                )
                 temperature = st.number_input(
                     "Temperature", min_value=0.0, max_value=2.0, value=0.5, step=0.1
                 )
@@ -50,12 +55,18 @@ def build_sidebar_config():
                     "top_k": int(top_k),
                     "reasoning": reasoning,
                     "caching_strategy": caching_strategy,
+                    "image_support": image_support,
                 }
             if provider == "Anthropic":
                 model_id = st.text_input(
                     "Model ID",
                     value="claude-haiku-4-5-20251001",
                     key="anthropic_model_id",
+                )
+                image_support = st.checkbox(
+                    "Image support",
+                    value=st.session_state.get("anthropic_image_support", False),
+                    key="anthropic_image_support",
                 )
                 temperature = st.number_input(
                     "Temperature", min_value=0.0, max_value=2.0, value=0.5, step=0.1
@@ -71,11 +82,19 @@ def build_sidebar_config():
                     "model_id": model_id,
                     "temperature": float(temperature),
                     "max_tokens": int(max_tokens),
-                    "caching_strategy": "" if caching_strategy == "none" else "anthropic",
+                    "caching_strategy": ""
+                    if caching_strategy == "none"
+                    else "anthropic",
+                    "image_support": image_support,
                 }
             if provider == "OpenAI":
                 model_id = st.text_input(
                     "Model ID", value="gpt-5.2", key="openai_model_id"
+                )
+                image_support = st.checkbox(
+                    "Image support",
+                    value=st.session_state.get("openai_image_support", False),
+                    key="openai_image_support",
                 )
                 temperature = st.number_input(
                     "Temperature", min_value=0.0, max_value=2.0, value=0.5, step=0.1
@@ -92,11 +111,17 @@ def build_sidebar_config():
                     "temperature": float(temperature),
                     "max_tokens": int(max_tokens),
                     "reasoning_effort": reasoning_effort,
+                    "image_support": image_support,
                 }
             model_id = st.text_input(
                 "Model ID",
                 value="us.anthropic.claude-haiku-4-5-20251001-v1:0",
                 key="bedrock_model_id",
+            )
+            image_support = st.checkbox(
+                "Image support",
+                value=st.session_state.get("bedrock_image_support", False),
+                key="bedrock_image_support",
             )
             region_name = st.text_input(
                 "Region", value="us-east-1", key="bedrock_region"
@@ -121,6 +146,7 @@ def build_sidebar_config():
                 "caching_strategy": ""
                 if caching_strategy == "none"
                 else "bedrock_anthropic",
+                "image_support": image_support,
             }
 
 
@@ -181,7 +207,11 @@ def build_ui_connector(llm_config):
         caching_strategy=llm_config.get("caching_strategy", ""),
     )
     replacement_dict = {"[[DATE]]": today_xml()}
-    return StLanggraphUIConnector(agent, replacement_dict=replacement_dict)
+    return StLanggraphUIConnector(
+        agent,
+        replacement_dict=replacement_dict,
+        enable_image_uploads=llm_config.get("image_support", False),
+    )
 
 
 def reset_stream_state():

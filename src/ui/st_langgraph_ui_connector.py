@@ -176,11 +176,14 @@ class StLanggraphUIConnector:
         replacement_dict: Key-value pairs for dynamic system prompt
             placeholder replacement (e.g. {"[[DATE]]": "<date>...</date>"}).
             Passed to the agent via the context parameter on each stream call.
+        enable_image_uploads: When True, show the image uploader for user
+            messages and send images as content blocks.
     """
 
-    def __init__(self, agent, replacement_dict=None):
+    def __init__(self, agent, replacement_dict=None, enable_image_uploads=False):
         self.agent = agent
         self.replacement_dict = replacement_dict if replacement_dict is not None else {}
+        self.enable_image_uploads = enable_image_uploads
         self.thread_id = str(uuid.uuid4())
 
     def render_sidebar_token_usage(self):
@@ -251,7 +254,11 @@ class StLanggraphUIConnector:
             saved_error = st.session_state.get("_next_interaction_parse_error")
             next_interaction = saved if saved is not None else last_next_interaction
             parse_error = saved_error if saved is not None else last_parse_error
-            pending_images = self._render_image_uploader(message_count)
+            pending_images = []
+            if self.enable_image_uploads:
+                pending_images = self._render_image_uploader(message_count)
+            else:
+                st.session_state.pop("_pending_images", None)
             user_msg = render_next_interaction(
                 next_interaction, "Ask away", message_count, parse_error
             )
