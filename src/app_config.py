@@ -18,6 +18,11 @@ from src.agent import agent_response_structure
 def build_sidebar_config():
     with st.sidebar:
         with st.expander("Model Settings", expanded=False):
+            show_prefill_assistant_box = st.checkbox(
+                "Enable pre-fill",
+                value=st.session_state.get("show_prefill_assistant_box", False),
+                key="show_prefill_assistant_box",
+            )
             provider = st.selectbox(
                 "Provider",
                 ["Ollama", "Anthropic", "OpenAI", "Bedrock"],
@@ -56,6 +61,7 @@ def build_sidebar_config():
                     "reasoning": reasoning,
                     "caching_strategy": caching_strategy,
                     "image_support": image_support,
+                    "show_prefill_assistant_box": show_prefill_assistant_box,
                 }
             if provider == "Anthropic":
                 model_id = st.text_input(
@@ -86,6 +92,7 @@ def build_sidebar_config():
                     if caching_strategy == "none"
                     else "anthropic",
                     "image_support": image_support,
+                    "show_prefill_assistant_box": show_prefill_assistant_box,
                 }
             if provider == "OpenAI":
                 model_id = st.text_input(
@@ -112,6 +119,7 @@ def build_sidebar_config():
                     "max_tokens": int(max_tokens),
                     "reasoning_effort": reasoning_effort,
                     "image_support": image_support,
+                    "show_prefill_assistant_box": show_prefill_assistant_box,
                 }
             model_id = st.text_input(
                 "Model ID",
@@ -147,6 +155,7 @@ def build_sidebar_config():
                 if caching_strategy == "none"
                 else "bedrock_anthropic",
                 "image_support": image_support,
+                "show_prefill_assistant_box": show_prefill_assistant_box,
             }
 
 
@@ -211,6 +220,7 @@ def build_ui_connector(llm_config):
         agent,
         replacement_dict=replacement_dict,
         enable_image_uploads=llm_config.get("image_support", False),
+        show_prefill_assistant_box=llm_config.get("show_prefill_assistant_box", False),
     )
 
 

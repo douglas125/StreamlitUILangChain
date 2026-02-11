@@ -36,6 +36,10 @@ _SUGGESTION_TOOLTIP = (
 )
 _MULTI_COUNT_TEMPLATE = "{count} selected"
 _PILLS_SUPPORTS_HELP = None
+_ASSISTANT_PREFILL_LABEL = "Assistant prefill (optional)"
+_ASSISTANT_PREFILL_KEY = "_assistant_prefill_input"
+_ASSISTANT_PREFILL_PLACEHOLDER = "Optional partial assistant response"
+_INPUT_COLUMN_RATIOS = [3, 2]
 
 
 @dataclass(frozen=True)
@@ -190,7 +194,11 @@ def strip_next_interaction_for_streaming(raw_text):
 
 
 def render_next_interaction(
-    next_interaction, default_prompt="Ask away", message_count=0, parse_error=None
+    next_interaction,
+    default_prompt="Ask away",
+    message_count=0,
+    parse_error=None,
+    show_prefill_assistant_box=False,
 ):
     """Render the proper Streamlit widget and return a user message if submitted.
 
@@ -200,14 +208,18 @@ def render_next_interaction(
         if parse_error:
             _render_parse_error_hint(parse_error)
             _render_free_text_hint()
-        return st.chat_input(default_prompt)
+        return render_chat_inputs(
+            default_prompt, show_prefill_assistant_box=show_prefill_assistant_box
+        )
 
     mode = next_interaction.presentation_mode
     suggestions = next_interaction.suggested_user_follow_ups
 
     if mode in {"radio_box", "multi_select_checkbox"} and not suggestions:
         _render_widget_hints("missing_suggestions")
-        return st.chat_input(default_prompt)
+        return render_chat_inputs(
+            default_prompt, show_prefill_assistant_box=show_prefill_assistant_box
+        )
 
     key = _interaction_key(next_interaction, message_count)
 
@@ -225,7 +237,9 @@ def render_next_interaction(
             else:
                 return choice
         _render_widget_hints(parse_error)
-        return st.chat_input(default_prompt)
+        return render_chat_inputs(
+            default_prompt, show_prefill_assistant_box=show_prefill_assistant_box
+        )
 
     if mode == "radio_box":
         choice = st.pills(
@@ -243,7 +257,9 @@ def render_next_interaction(
             else:
                 return choice
         _render_widget_hints(parse_error)
-        return st.chat_input(default_prompt)
+        return render_chat_inputs(
+            default_prompt, show_prefill_assistant_box=show_prefill_assistant_box
+        )
 
     if mode == "multi_select_checkbox":
         choices = st.pills(
@@ -265,7 +281,9 @@ def render_next_interaction(
             else:
                 return ", ".join(choices)
         _render_widget_hints(parse_error)
-        return st.chat_input(default_prompt)
+        return render_chat_inputs(
+            default_prompt, show_prefill_assistant_box=show_prefill_assistant_box
+        )
 
     if mode == "date_input":
         params = next_interaction.params or {}
@@ -279,12 +297,16 @@ def render_next_interaction(
         if st.button(_SEND_LABEL, key=f"{key}_send"):
             return value.isoformat()
         _render_widget_hints(parse_error)
-        return st.chat_input(default_prompt)
+        return render_chat_inputs(
+            default_prompt, show_prefill_assistant_box=show_prefill_assistant_box
+        )
 
     if mode == "datetime_input":
         if not hasattr(st, "datetime_input"):
             _render_widget_hints(parse_error or "unsupported_datetime_input")
-            return st.chat_input(default_prompt)
+            return render_chat_inputs(
+                default_prompt, show_prefill_assistant_box=show_prefill_assistant_box
+            )
         params = next_interaction.params or {}
         value = st.datetime_input(
             _DATETIME_LABEL,
@@ -296,12 +318,16 @@ def render_next_interaction(
         if st.button(_SEND_LABEL, key=f"{key}_send"):
             return value.isoformat()
         _render_widget_hints(parse_error)
-        return st.chat_input(default_prompt)
+        return render_chat_inputs(
+            default_prompt, show_prefill_assistant_box=show_prefill_assistant_box
+        )
 
     if mode == "data_editor":
         if not hasattr(st, "data_editor"):
             _render_widget_hints(parse_error or "unsupported_data_editor")
-            return st.chat_input(default_prompt)
+            return render_chat_inputs(
+                default_prompt, show_prefill_assistant_box=show_prefill_assistant_box
+            )
         params = next_interaction.params or {}
         allow_add_rows = bool(params.get("allow_add_rows", False))
         num_rows = "dynamic" if allow_add_rows else "fixed"
@@ -317,9 +343,33 @@ def render_next_interaction(
             payload = json.dumps(normalized, default=_json_default, ensure_ascii=True)
             return f"data_editor: {payload}"
         _render_widget_hints(parse_error)
-        return st.chat_input(default_prompt)
+        return render_chat_inputs(
+            default_prompt, show_prefill_assistant_box=show_prefill_assistant_box
+        )
 
-    return st.chat_input(default_prompt)
+    return render_chat_inputs(
+        default_prompt, show_prefill_assistant_box=show_prefill_assistant_box
+    )
+
+
+def render_chat_inputs(
+    default_prompt="Ask away", disabled=False, show_prefill_assistant_box=False
+):
+    """Render user chat input with an optional assistant prefill field."""
+    if show_prefill_assistant_box:
+        input_cols = st.columns(_INPUT_COLUMN_RATIOS)
+        with input_cols[0]:
+            user_msg = st.chat_input(default_prompt, disabled=disabled)
+        with input_cols[1]:
+            st.text_input(
+                _ASSISTANT_PREFILL_LABEL,
+                key=_ASSISTANT_PREFILL_KEY,
+                placeholder=_ASSISTANT_PREFILL_PLACEHOLDER,
+                disabled=disabled,
+            )
+    else:
+        user_msg = st.chat_input(default_prompt, disabled=disabled)
+    return user_msg
 
 
 def _pending_tag_prefix_len(text, tag):

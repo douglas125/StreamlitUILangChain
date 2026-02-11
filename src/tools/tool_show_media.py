@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 from typing import Optional
+from urllib.parse import parse_qs
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
@@ -67,14 +68,38 @@ class ShowMediaOutput(BaseModel):
 
 def _infer_type_from_source(source: str) -> Optional[str]:
     parsed = urlparse(source)
-    path = parsed.path if parsed.scheme in ("http", "https") else source
-    suffix = Path(path).suffix.lower()
-    if suffix in IMAGE_EXTENSIONS:
-        return "image"
-    if suffix in AUDIO_EXTENSIONS:
-        return "audio"
-    if suffix in VIDEO_EXTENSIONS:
-        return "video"
+    candidates = []
+    if parsed.scheme in ("http", "https"):
+        candidates.append(parsed.path)
+        query = parse_qs(parsed.query)
+        query_keys = (
+            "filename",
+            "file",
+            "name",
+            "path",
+            "url",
+            "src",
+            "source",
+            "media",
+            "asset",
+            "attachment",
+        )
+        for key in query_keys:
+            values = query.get(key, [])
+            for value in values:
+                if value:
+                    candidates.append(urlparse(value).path)
+    else:
+        candidates.append(source)
+
+    for candidate in candidates:
+        suffix = Path(candidate).suffix.lower()
+        if suffix in IMAGE_EXTENSIONS:
+            return "image"
+        if suffix in AUDIO_EXTENSIONS:
+            return "audio"
+        if suffix in VIDEO_EXTENSIONS:
+            return "video"
     return None
 
 
@@ -86,11 +111,11 @@ def tool_show_media(source: str, media_type: Optional[str] = None) -> str:
     """
     inferred = media_type or _infer_type_from_source(source)
     if inferred is None:
-        raise ValueError(
-            "Unable to infer media type from source. Provide media_type as one of: "
-            f"{list(MEDIA_TYPES)}"
+        return (
+            "Unable to infer media type from source. "
+            f"Retry with media_type set to one of: {list(MEDIA_TYPES)}"
         )
     if inferred not in MEDIA_TYPES:
-        raise ValueError(f"media_type must be one of {list(MEDIA_TYPES)}")
+        return f"media_type must be one of {list(MEDIA_TYPES)}"
     output = ShowMediaOutput(media_content=MediaContent(type=inferred, url=source))
     return output.model_dump_json()

@@ -8,6 +8,7 @@ import streamlit as st
 from src.ui.media_renderer import get_media_content_from_tool_result
 from src.ui.media_renderer import render_media_content
 from src.ui.next_interaction import parse_next_interaction
+from src.ui.next_interaction import render_chat_inputs
 from src.ui.next_interaction import render_next_interaction
 from src.ui.next_interaction import strip_next_interaction_for_streaming
 from src.ui.token_usage import format_usage_table
@@ -94,7 +95,9 @@ def _extract_text_and_images(content):
                 image_url = block.get("image_url") or {}
                 if isinstance(image_url, dict) and image_url.get("url"):
                     images.append({"url": image_url.get("url")})
-    return "\n\n".join(text_parts).strip(), images
+    # Preserve exact token adjacency across content blocks so XML tags (e.g.
+    # <next_interaction>) are not broken by injected separators.
+    return "".join(text_parts).strip(), images
 
 
 class _StreamState:
@@ -182,12 +185,21 @@ class StLanggraphUIConnector:
             Passed to the agent via the context parameter on each stream call.
         enable_image_uploads: When True, show the image uploader for user
             messages and send images as content blocks.
+        show_prefill_assistant_box: When True, display a textbox for optional
+            assistant prefill next to the user input.
     """
 
-    def __init__(self, agent, replacement_dict=None, enable_image_uploads=False):
+    def __init__(
+        self,
+        agent,
+        replacement_dict=None,
+        enable_image_uploads=False,
+        show_prefill_assistant_box=False,
+    ):
         self.agent = agent
         self.replacement_dict = replacement_dict if replacement_dict is not None else {}
         self.enable_image_uploads = enable_image_uploads
+        self.show_prefill_assistant_box = show_prefill_assistant_box
         self.thread_id = str(uuid.uuid4())
 
     def render_sidebar_token_usage(self):
@@ -219,6 +231,9 @@ class StLanggraphUIConnector:
         self.thread_id = str(uuid.uuid4())
         st.session_state.pop("_next_interaction", None)
         st.session_state.pop("_next_interaction_parse_error", None)
+        st.session_state.pop("_assistant_prefill_input", None)
+        st.session_state.pop("_pending_assistant_prefill", None)
+        st.session_state.pop("_prefill_merge_pending_text", None)
         st.rerun()
 
     def display_chat(self):
@@ -238,16 +253,25 @@ class StLanggraphUIConnector:
             st.error(stream_error)
 
         if is_streaming:
-            st.chat_input("Ask away", disabled=True)
+            render_chat_inputs(
+                "Ask away",
+                disabled=True,
+                show_prefill_assistant_box=self.show_prefill_assistant_box,
+            )
             pending_msg = st.session_state.pop("_pending_msg", "")
             pending_images = st.session_state.pop("_pending_images_to_send", [])
+            pending_assistant_prefill = st.session_state.pop(
+                "_pending_assistant_prefill", ""
+            )
             with st.chat_message("user", avatar="👤"):
                 if pending_msg:
                     st.markdown(pending_msg)
                 for image_payload in pending_images:
                     _render_image_payload(image_payload)
             try:
-                self._stream_response(pending_msg, pending_images)
+                self._stream_response(
+                    pending_msg, pending_images, pending_assistant_prefill
+                )
             except Exception as exc:
                 st.session_state["_stream_error"] = f"Streaming error: {exc}"
             finally:
@@ -264,8 +288,18 @@ class StLanggraphUIConnector:
             else:
                 st.session_state.pop("_pending_images", None)
             user_msg = render_next_interaction(
-                next_interaction, "Ask away", message_count, parse_error
+                next_interaction,
+                "Ask away",
+                message_count,
+                parse_error,
+                self.show_prefill_assistant_box,
             )
+            if self.show_prefill_assistant_box:
+                assistant_prefill = st.session_state.get(
+                    "_assistant_prefill_input", ""
+                ).strip()
+            else:
+                assistant_prefill = ""
             send_images_only = False
             if pending_images:
                 send_images_only = st.button("Send images", key="send_images_only")
@@ -276,6 +310,11 @@ class StLanggraphUIConnector:
                 st.session_state["_stream_start_time"] = time.perf_counter()
                 st.session_state["_pending_msg"] = user_msg or ""
                 st.session_state["_pending_images_to_send"] = pending_images
+                st.session_state["_pending_assistant_prefill"] = assistant_prefill
+                if assistant_prefill:
+                    st.session_state["_prefill_merge_pending_text"] = assistant_prefill
+                else:
+                    st.session_state.pop("_prefill_merge_pending_text", None)
                 st.session_state["_pending_images"] = []
                 st.session_state["_image_uploader_key"] = (
                     st.session_state.get("_image_uploader_key", 0) + 1
@@ -305,7 +344,47 @@ class StLanggraphUIConnector:
         pending_media = []
         last_next_interaction = None
         last_parse_error = None
-        for msg in messages:
+        is_streaming = st.session_state.get("_streaming", False)
+        prefill_pending_text = ""
+        if not is_streaming:
+            prefill_pending_text = st.session_state.get(
+                "_prefill_merge_pending_text", ""
+            ).strip()
+        prefill_merged = False
+
+        idx = 0
+        while idx < len(messages):
+            msg = messages[idx]
+            prefix_for_current_assistant = ""
+            prefix_reasoning_for_current_assistant = None
+
+            can_try_prefill_merge = (
+                bool(prefill_pending_text)
+                and not prefill_merged
+                and idx + 1 < len(messages)
+                and msg.type in ("ai", "assistant")
+            )
+            if can_try_prefill_merge:
+                next_msg = messages[idx + 1]
+                same_role = next_msg.type in ("ai", "assistant")
+                msg_tool_calls = getattr(msg, "tool_calls", [])
+                next_tool_calls = getattr(next_msg, "tool_calls", [])
+                msg_reasoning = msg.additional_kwargs.get("reasoning_content")
+                msg_text, msg_images = _extract_text_and_images(msg.content)
+                matches_prefill = msg_text.strip() == prefill_pending_text
+                if (
+                    same_role
+                    and not msg_tool_calls
+                    and not next_tool_calls
+                    and not msg_images
+                    and matches_prefill
+                ):
+                    prefill_merged = True
+                    prefix_for_current_assistant = msg_text
+                    prefix_reasoning_for_current_assistant = msg_reasoning
+                    idx += 1
+                    msg = messages[idx]
+
             if msg.type == "tool":
                 tool_buffer.append(msg)
             else:
@@ -330,40 +409,64 @@ class StLanggraphUIConnector:
                         pending_reasoning = None
                     role = "user" if msg.type == "human" else "assistant"
                     avatar = "👤" if msg.type == "human" else "✨"
-                    with st.chat_message(role, avatar=avatar):
-                        if msg.type != "human":
-                            reasoning = msg.additional_kwargs.get("reasoning_content")
-                            if reasoning:
+                    reasoning = None
+                    if msg.type != "human":
+                        reasoning = msg.additional_kwargs.get("reasoning_content")
+                    content_text, images = _extract_text_and_images(msg.content)
+                    if role == "assistant" and prefix_for_current_assistant:
+                        content_text = f"{prefix_for_current_assistant}{content_text}"
+                    if role == "assistant" and prefix_reasoning_for_current_assistant:
+                        if reasoning:
+                            reasoning = (
+                                f"{prefix_reasoning_for_current_assistant}\n\n{reasoning}"
+                            )
+                        else:
+                            reasoning = prefix_reasoning_for_current_assistant
+
+                    clean_text = content_text
+                    if role == "assistant":
+                        (
+                            clean_text,
+                            next_interaction,
+                            parse_error,
+                        ) = parse_next_interaction(content_text)
+                        if parse_error:
+                            last_parse_error = parse_error
+                            last_next_interaction = None
+                        elif next_interaction:
+                            last_parse_error = None
+                            last_next_interaction = next_interaction
+                        else:
+                            last_parse_error = None
+                            last_next_interaction = None
+
+                    has_visible_text = bool(clean_text if role == "assistant" else content_text)
+                    has_reasoning = bool(reasoning)
+                    has_images = bool(images)
+                    has_pending_media = bool(role == "assistant" and pending_media)
+                    if has_visible_text or has_reasoning or has_images or has_pending_media:
+                        with st.chat_message(role, avatar=avatar):
+                            if has_reasoning:
                                 with st.expander("Thinking", expanded=False):
                                     st.markdown(reasoning)
-                        content_text, images = _extract_text_and_images(msg.content)
-                        if role == "assistant":
-                            (
-                                clean_text,
-                                next_interaction,
-                                parse_error,
-                            ) = parse_next_interaction(content_text)
-                            if parse_error:
-                                last_parse_error = parse_error
-                                last_next_interaction = None
-                            elif next_interaction:
-                                last_parse_error = None
-                                last_next_interaction = next_interaction
+                            if role == "assistant":
+                                if clean_text:
+                                    st.markdown(clean_text)
                             else:
-                                last_parse_error = None
-                                last_next_interaction = None
-                            if clean_text:
-                                st.markdown(clean_text)
-                        else:
-                            if content_text:
-                                st.markdown(content_text)
-                        if images:
-                            for image_payload in images:
-                                _render_image_payload(image_payload)
-                        if role == "assistant" and pending_media:
-                            for media in pending_media:
-                                render_media_content(media)
-                            pending_media = []
+                                if content_text:
+                                    st.markdown(content_text)
+                            if images:
+                                for image_payload in images:
+                                    _render_image_payload(image_payload)
+                            if role == "assistant" and pending_media:
+                                for media in pending_media:
+                                    render_media_content(media)
+                                pending_media = []
+            idx += 1
+
+        if prefill_pending_text and not is_streaming:
+            st.session_state.pop("_prefill_merge_pending_text", None)
+
         if tool_buffer:
             media_items = self._display_tool_group(
                 pending_tool_calls, tool_buffer, pending_reasoning
@@ -371,7 +474,7 @@ class StLanggraphUIConnector:
             if media_items:
                 pending_media.extend(media_items)
         if pending_media:
-            with st.chat_message("assistant", avatar="âœ¨"):
+            with st.chat_message("assistant", avatar="✨"):
                 for media in pending_media:
                     render_media_content(media)
         return last_next_interaction, len(messages), last_parse_error
@@ -421,7 +524,7 @@ class StLanggraphUIConnector:
                                 st.markdown(result_msg.content)
         return media_items
 
-    def _stream_response(self, user_msg, image_payloads=None):
+    def _stream_response(self, user_msg, image_payloads=None, assistant_prefill=""):
         """Stream the agent's response for a new user message.
 
         Sends the user message to the agent and iterates the stream, which
@@ -438,11 +541,15 @@ class StLanggraphUIConnector:
 
         Args:
             user_msg: The user's input text.
+            assistant_prefill: Optional assistant text prefix to prefill.
         """
         content_blocks = _build_user_content_blocks(user_msg, image_payloads)
         cur_user_msg = {"role": "user", "content": content_blocks}
+        stream_messages = [cur_user_msg]
+        if assistant_prefill:
+            stream_messages.append({"role": "assistant", "content": assistant_prefill})
         result = self.agent.stream(
-            {"messages": [cur_user_msg]},
+            {"messages": stream_messages},
             config={"configurable": {"thread_id": self.thread_id}},
             context={"sys_prompt_replace_dict": self.replacement_dict},
             stream_mode=["messages", "updates"],
@@ -451,6 +558,15 @@ class StLanggraphUIConnector:
         ss = _StreamState()
         start_time = st.session_state.pop("_stream_start_time", None)
         ss.start_time = start_time if start_time is not None else time.perf_counter()
+        if assistant_prefill:
+            ss.full_response_raw = assistant_prefill
+            ss.full_response_display = strip_next_interaction_for_streaming(
+                ss.full_response_raw
+            )
+            if ss.full_response_display:
+                ss.response_container = st.chat_message("assistant", avatar="✨")
+                ss.response_placeholder = ss.response_container.empty()
+                ss.response_placeholder.markdown(ss.full_response_display)
 
         try:
             for stream_mode, cur_data in result:
