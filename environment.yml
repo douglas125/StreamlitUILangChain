@@ -11,6 +11,7 @@ dependencies:
   - pip
   - git
   - pre-commit
+  - pytest
   - streamlit
   - langchain
   - langchain-core
@@ -21,3 +22,5 @@ dependencies:
   - langgraph
   - langsmith
   - altair
+  - duckdb
+  - matplotlib

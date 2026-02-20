@@ -5,6 +5,8 @@ from src.app_config import build_ui_connector
 from src.app_config import reset_stream_state
 from src.app_config import should_rebuild_connector
 
+APP_RUNTIME_VERSION = "2026-02-20-csv-plot-static-image-fix-1"
+
 
 def main():
     st.set_page_config(
@@ -39,10 +41,23 @@ def main():
                 value=st.session_state.get("enable_media_tool", True),
                 key="enable_media_tool",
             )
+            enable_csv_sql_tool = st.checkbox(
+                "Enable CSV SQL tool",
+                value=st.session_state.get("enable_csv_sql_tool", True),
+                key="enable_csv_sql_tool",
+            )
+            enable_csv_plot_tool = st.checkbox(
+                "Enable CSV plot tool",
+                value=st.session_state.get("enable_csv_plot_tool", True),
+                key="enable_csv_plot_tool",
+            )
     llm_config["system_prompt"] = system_prompt
     llm_config["enable_widgets"] = enable_widgets
     llm_config["enable_date_math"] = enable_date_math
     llm_config["enable_media_tool"] = enable_media_tool
+    llm_config["enable_csv_sql_tool"] = enable_csv_sql_tool
+    llm_config["enable_csv_plot_tool"] = enable_csv_plot_tool
+    llm_config["app_runtime_version"] = APP_RUNTIME_VERSION
     if should_rebuild_connector(llm_config):
         st.session_state.ui_connector = build_ui_connector(llm_config)
         reset_stream_state()

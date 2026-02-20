@@ -6,6 +6,7 @@ Drop-in Streamlit chat interface for any LangGraph agent. Handles streaming, thi
 
 - Token-by-token streaming with thinking/reasoning display
 - Tool call visualization (invocations + results, grouped and collapsible)
+- Built-in tools for date math, media rendering, SQL queries over CSV files, and static CSV chart images
 - Interactive follow-up widgets (yes/no buttons, radio, multi-select checkboxes)
 - Free-text input always available alongside widgets
 - System prompt placeholder replacement at runtime

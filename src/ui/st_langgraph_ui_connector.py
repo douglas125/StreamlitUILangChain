@@ -6,6 +6,8 @@ import uuid
 import streamlit as st
 
 from src.ui.media_renderer import get_media_content_from_tool_result
+from src.ui.media_renderer import get_chart_content_from_tool_result
+from src.ui.media_renderer import render_chart_content
 from src.ui.media_renderer import render_media_content
 from src.ui.next_interaction import parse_next_interaction
 from src.ui.next_interaction import render_chat_inputs
@@ -148,6 +150,7 @@ class _StreamState:
         self.parse_error = None
         self.suggestions_status = None
         self.pending_media = []
+        self.pending_charts = []
         self.start_time = None
         self.first_token_time = None
 
@@ -342,6 +345,7 @@ class StLanggraphUIConnector:
         pending_tool_calls = []
         pending_reasoning = None
         pending_media = []
+        pending_charts = []
         last_next_interaction = None
         last_parse_error = None
         is_streaming = st.session_state.get("_streaming", False)
@@ -399,11 +403,13 @@ class StLanggraphUIConnector:
                             pending_reasoning += "\n\n" + reasoning
                 else:
                     if tool_buffer:
-                        media_items = self._display_tool_group(
+                        media_items, chart_items = self._display_tool_group(
                             pending_tool_calls, tool_buffer, pending_reasoning
                         )
                         if media_items:
                             pending_media.extend(media_items)
+                        if chart_items:
+                            pending_charts.extend(chart_items)
                         tool_buffer = []
                         pending_tool_calls = []
                         pending_reasoning = None
@@ -444,7 +450,14 @@ class StLanggraphUIConnector:
                     has_reasoning = bool(reasoning)
                     has_images = bool(images)
                     has_pending_media = bool(role == "assistant" and pending_media)
-                    if has_visible_text or has_reasoning or has_images or has_pending_media:
+                    has_pending_charts = bool(role == "assistant" and pending_charts)
+                    if (
+                        has_visible_text
+                        or has_reasoning
+                        or has_images
+                        or has_pending_media
+                        or has_pending_charts
+                    ):
                         with st.chat_message(role, avatar=avatar):
                             if has_reasoning:
                                 with st.expander("Thinking", expanded=False):
@@ -462,21 +475,29 @@ class StLanggraphUIConnector:
                                 for media in pending_media:
                                     render_media_content(media)
                                 pending_media = []
+                            if role == "assistant" and pending_charts:
+                                for chart in pending_charts:
+                                    render_chart_content(chart)
+                                pending_charts = []
             idx += 1
 
         if prefill_pending_text and not is_streaming:
             st.session_state.pop("_prefill_merge_pending_text", None)
 
         if tool_buffer:
-            media_items = self._display_tool_group(
+            media_items, chart_items = self._display_tool_group(
                 pending_tool_calls, tool_buffer, pending_reasoning
             )
             if media_items:
                 pending_media.extend(media_items)
-        if pending_media:
+            if chart_items:
+                pending_charts.extend(chart_items)
+        if pending_media or pending_charts:
             with st.chat_message("assistant", avatar="✨"):
                 for media in pending_media:
                     render_media_content(media)
+                for chart in pending_charts:
+                    render_chart_content(chart)
         return last_next_interaction, len(messages), last_parse_error
 
     def _display_tool_group(self, tool_calls, tool_msgs, reasoning=None):
@@ -502,6 +523,7 @@ class StLanggraphUIConnector:
                 "Thinking" expander if present.
         """
         media_items = []
+        chart_items = []
         if reasoning:
             with st.chat_message("assistant", avatar="✨"):
                 with st.expander("Thinking", expanded=False):
@@ -520,9 +542,13 @@ class StLanggraphUIConnector:
                         if media:
                             media_items.append(media)
                         else:
-                            with st.expander(f"Result: {result_msg.name}"):
-                                st.markdown(result_msg.content)
-        return media_items
+                            chart = get_chart_content_from_tool_result(result_msg.content)
+                            if chart:
+                                chart_items.append(chart)
+                            else:
+                                with st.expander(f"Result: {result_msg.name}"):
+                                    st.markdown(result_msg.content)
+        return media_items, chart_items
 
     def _stream_response(self, user_msg, image_payloads=None, assistant_prefill=""):
         """Stream the agent's response for a new user message.
@@ -661,8 +687,12 @@ class StLanggraphUIConnector:
                 if media:
                     ss.pending_media.append(media)
                 else:
-                    with st.expander(f"Result: {tool_msg.name}"):
-                        st.markdown(tool_msg.content)
+                    chart = get_chart_content_from_tool_result(tool_msg.content)
+                    if chart:
+                        ss.pending_charts.append(chart)
+                    else:
+                        with st.expander(f"Result: {tool_msg.name}"):
+                            st.markdown(tool_msg.content)
 
     def _handle_stream_message(self, ss, cur_data):
         """Route a token-level message chunk to the appropriate handler.
@@ -803,15 +833,19 @@ class StLanggraphUIConnector:
             ss.suggestions_status.update(
                 label="Suggestions ready", state="complete", expanded=False
             )
-        if ss.pending_media:
+        if ss.pending_media or ss.pending_charts:
             if ss.response_container is None:
                 with st.chat_message("assistant", avatar="✨"):
                     for media in ss.pending_media:
                         render_media_content(media)
+                    for chart in ss.pending_charts:
+                        render_chart_content(chart)
             else:
                 with ss.response_container:
                     for media in ss.pending_media:
                         render_media_content(media)
+                    for chart in ss.pending_charts:
+                        render_chart_content(chart)
         if ss.tools_container is not None:
             ss.tools_container = None
         if ss.response_container is not None:

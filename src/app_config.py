@@ -10,6 +10,8 @@ from src.ui.st_langgraph_ui_connector import StLanggraphUIConnector
 
 from src.tools.tool_do_date_math import today_xml
 from src.tools.tool_do_date_math import do_date_math
+from src.tools.tool_query_csv import tool_query_csv
+from src.tools.tool_plot_csv import tool_plot_csv
 from src.tools.tool_show_media import tool_show_media
 
 from src.agent import agent_response_structure
@@ -206,6 +208,10 @@ def build_ui_connector(llm_config):
         all_tools.append(do_date_math)
     if llm_config.get("enable_media_tool", True):
         all_tools.append(tool_show_media)
+    if llm_config.get("enable_csv_sql_tool", True):
+        all_tools.append(tool_query_csv)
+    if llm_config.get("enable_csv_plot_tool", True):
+        all_tools.append(tool_plot_csv)
     base_prompt = llm_config.get("system_prompt", "You are a helpful assistant.")
     if llm_config.get("enable_widgets", True):
         base_prompt += agent_response_structure.RESPONSE_PROMPT

@@ -34,6 +34,8 @@ src/
     Token_Usage_Details.py         # Per-invocation token usage chart
   tools/
     tool_do_date_math.py           # Date math tool + today_xml() helper
+    tool_query_csv.py              # Query CSV files with DuckDB (read-only SQL)
+    tool_plot_csv.py               # Generate static chart images from CSV SQL into media/
     tool_show_media.py             # Media rendering tool helper
 ```
 
@@ -70,12 +72,14 @@ src/
 ### Tools (`src/tools/`)
 - `do_date_math` adds/subtracts day/week/month/year intervals from a date. Uses `dateutil.relativedelta`.
 - `today_xml()` returns today's date in XML format for the system prompt `[[DATE]]` placeholder.
+- `tool_query_csv` runs read-only SQL (SELECT/CTE) over a CSV file using DuckDB.
+- `tool_plot_csv` runs SQL over CSV data and saves a static chart image under `media/`, returning `media_content` so the UI auto-renders it.
 - `tool_show_media` renders image/audio/video links in the chat UI.
 
 ## Key Dependencies
 - `streamlit`, `langchain`, `langchain-core`, `langgraph`, `langsmith`
 - Provider packages: `langchain-ollama`, `langchain-aws`, `langchain-openai`, `langchain-anthropic`
-- `boto3` (for Bedrock), `dateutil` (for date math tool), `altair` (token usage charts)
+- `boto3` (for Bedrock), `dateutil` (for date math tool), `duckdb` (CSV SQL tools), `matplotlib` (static chart generation), `altair` (token usage charts)
 
 ## Conventions
 - Avatars: `👤` for user, `✨` for assistant, `🔧` for tool calls.
